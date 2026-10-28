@@ -114,7 +114,7 @@ function render() {
   today = new Date();
   today.setHours(0, 0, 0, 0);
   for (const c of db.contracts) {
-    if (c.status === 'Actif' && c.end && c.end < iso(today)) c.status = 'Terminé';
+    c.status = automaticStatus(c);
   }
   const tabs = [['dashboard', '◫', 'Tableau de bord'], ['contracts', '▤', 'Contrats'], ['alerts', '◷', 'Échéances & alertes'], ['cases', '⚑', 'Litiges'], ['ai', '✧', 'Analyse des clauses'], ['settings', '⚙', 'Données & aide']];
   $('#nav').innerHTML = tabs.map(([id, ic, t]) => '<button class="' + (page === id ? 'active' : '') + '" onclick="go(\'' + id + '\')">' + ic + '　' + t + '</button>').join('');
@@ -168,10 +168,27 @@ const specificFields = {
  services:{description:'Description des prestations',deliverables:'Livrables',schedule:'Calendrier',acceptance:'Critères de réception',maintenance:'Maintenance (si applicable)',support:'Assistance (si applicable)'},
  autre:{customType:'Type libre',obligations:'Obligations',conditions:'Conditions particulières'}
 };
+function automaticStatus(c) {
+ if(c.status==='Résilié') return 'Résilié';
+ const date=iso(new Date());
+ return c.end && c.end<date?'Terminé':c.start>date?'Brouillon':'Actif';
+}
+const currencies = [['MGA','🇲🇬','Ariary'],['EUR','🇪🇺','Euro'],['USD','🇺🇸','Dollar américain'],['GBP','🇬🇧','Livre sterling'],['CHF','🇨🇭','Franc suisse'],['CNY','🇨🇳','Yuan'],['JPY','🇯🇵','Yen'],['INR','🇮🇳','Roupie indienne'],['MUR','🇲🇺','Roupie mauricienne'],['ZAR','🇿🇦','Rand'],['CAD','🇨🇦','Dollar canadien'],['AUD','🇦🇺','Dollar australien']];
+function currencySelect(value) {
+ const options=currencies.some(([code])=>code===value)?currencies:[...currencies,[value,'🌐',value]];
+ return '<div><label for="f_details_currency">Devise *</label><select required id="f_details_currency" name="details_currency">'+options.map(([code,flag,label])=>'<option value="'+esc(code)+'" '+(code===value?'selected':'')+'>'+flag+' '+esc(code)+' — '+esc(label)+'</option>').join('')+'</select></div>';
+}
+function fillTestObligations(d) {
+ for(const [key,label] of Object.entries(specificFields[d.type]||{})) {
+  if(!(key in d.specific)) d.specific[key]=label+' : conditions de démonstration à vérifier.';
+ }
+}
 function newContract(id) {
  const original=db.contracts.find(c=>c.id===id);
- const c=structuredClone(original || {id:'CT-'+crypto.randomUUID(),name:'',supplier:'',category:'Autre',owner:'',amount:null,frequency:'Annuel',start:iso(today),end:null,notice:0,renew:'Non',status:'Brouillon',penalty:'',notes:''});
- const d=c.details || {reference:c.id,type:'',representative:'',department:'',purpose:'',signed:null,currency:'MGA',payment:'',clauses:'',specific:{}};
+ const c=structuredClone(original || {id:'CT-'+crypto.randomUUID(),name:'Prestation de démonstration',supplier:'Fournisseur Démo',category:'Services',owner:'Carlos',amount:1200000,frequency:'Annuel',start:iso(today),end:null,notice:0,renew:'Non',status:'Brouillon',penalty:'',notes:''});
+ const d=c.details || {reference:original?c.id:'REF-'+iso(today).replaceAll('-','')+'-'+crypto.randomUUID().slice(0,8).toUpperCase(),type:'services',representative:'Rakoto Jean',department:'Achats',purpose:'Maintenance et assistance du matériel informatique pour le projet de démonstration.',signed:iso(today),currency:'MGA',payment:'Paiement sous 30 jours après réception de la facture.',clauses:'Confidentialité des informations échangées.',specific:{}};
+ if(!original) fillTestObligations(d);
+ c.status=automaticStatus(c);
  let step=0, busy=false;
  const names=['Identification','Objet et obligations','Conditions financières','Durée et renouvellement','Clauses et risques','Documents et validation'];
  const area=(label,key,value,required=false)=>'<div class="full"><label for="w_'+key+'">'+esc(label)+(required?' *':'')+'</label><textarea id="w_'+key+'" name="'+key+'" maxlength="10000" '+(required?'required':'')+'>'+esc(value)+'</textarea></div>';
@@ -181,6 +198,7 @@ function newContract(id) {
    else if(k.startsWith('details_')) d[k.slice(8)]=v.trim() || (k==='details_signed'?null:'');
    else if(k!=='pdf') c[k]=v.trim();
   }
+  c.status=automaticStatus(c);
  }
  function valid() {
   const form=$('#contractForm');
@@ -191,16 +209,16 @@ function newContract(id) {
  }
  function show() {
   let html='';
-  if(step===0) html='<div class="full"><label for="contractType">Type de contrat *</label><select id="contractType" name="details_type" required><option value="">Choisir un type…</option>'+Object.entries(contractTypes).map(([k,v])=>'<option value="'+k+'" '+(d.type===k?'selected':'')+'>'+v+'</option>').join('')+'</select></div>'+input('Référence unique *','details_reference',d.reference,'text','required maxlength="120"')+input('Intitulé *','name',c.name,'text','required maxlength="150"')+input('Fournisseur *','supplier',c.supplier,'text','required maxlength="120"')+input('Représentant','details_representative',d.representative,'text','maxlength="200"')+input('Responsable interne *','owner',c.owner,'text','required maxlength="200"')+input('Service concerné *','details_department',d.department,'text','required maxlength="200"')+input('Catégorie','category',c.category,'text','required maxlength="200"')+select('Statut','status',c.status,['Brouillon','Actif','Terminé','Résilié']);
+  if(step===0) html='<div class="full"><label for="contractType">Type de contrat *</label><select id="contractType" name="details_type" required><option value="">Choisir un type…</option>'+Object.entries(contractTypes).map(([k,v])=>'<option value="'+k+'" '+(d.type===k?'selected':'')+'>'+v+'</option>').join('')+'</select></div>'+input('Référence automatique','details_reference',d.reference,'text','readonly')+input('Intitulé *','name',c.name,'text','required maxlength="150"')+input('Fournisseur *','supplier',c.supplier,'text','required maxlength="120"')+input('Représentant','details_representative',d.representative,'text','maxlength="200"')+input('Responsable interne *','owner',c.owner,'text','required maxlength="200"')+input('Service concerné *','details_department',d.department,'text','required maxlength="200"')+input('Catégorie','category',c.category,'text','required maxlength="200"')+input('Statut automatique','status',c.status,'text','readonly');
   if(step===1) html=area('Objet du contrat','details_purpose',d.purpose,true)+Object.entries(specificFields[d.type]).map(([k,label],i)=>area(label,'specific_'+k,d.specific[k],i===0)).join('');
-  if(step===2) html=input('Montant estimé (facultatif)','amount',c.amount,'number','min="0" max="1000000000000" step="0.01"')+input('Devise ISO (ex. MGA, EUR, USD) *','details_currency',d.currency,'text','required pattern="[A-Z]{3}" maxlength="3"')+select('Périodicité du montant estimé','frequency',c.frequency,['Mensuel','Trimestriel','Annuel'])+area('Modalités de paiement','details_payment',d.payment);
+  if(step===2) html=input('Montant estimé (facultatif)','amount',c.amount,'number','min="0" max="1000000000000" step="0.01"')+currencySelect(d.currency)+select('Périodicité du montant estimé','frequency',c.frequency,['Mensuel','Trimestriel','Annuel'])+area('Modalités de paiement','details_payment',d.payment);
   if(step===3) html=input('Date de signature','details_signed',d.signed,'date')+input('Date de début *','start',c.start,'date','required')+input('Date de fin (vide si durée indéterminée)','end',c.end,'date')+select('Reconduction','renew',c.renew,['Non','Oui'])+input('Préavis en jours *','notice',c.notice,'number','required min="0" max="730" step="1"')+'<p class="full muted">Sans date de fin, aucun rappel de fin automatique ne sera calculé.</p>';
   if(step===4) html=area('Clauses particulières','details_clauses',d.clauses)+area('Pénalités et risques à examiner','penalty',c.penalty)+area('Notes','notes',c.notes)+'<p class="full muted">La saisie ne garantit pas la validité juridique du contrat. Prévoyez une relecture adaptée.</p>';
   if(step===5) html='<div class="full">'+contractSummary({...c,details:d})+'<h3>Documents PDF</h3><p>Les PDF peuvent être ajoutés à la fiche après enregistrement. Les documents existants sont conservés.</p>'+(original?'<div id="contractDocuments" data-contract="'+esc(c.id)+'"></div>':'')+'<p>Vérifiez le récapitulatif avant de confirmer.</p></div>';
   const content='<h2>'+(id?'Modifier le contrat':'Nouveau contrat fournisseur')+'</h2><p id="wizardStep" tabindex="-1">Étape '+(step+1)+' sur 6 · '+names[step]+'</p><progress aria-label="Progression du formulaire" max="6" value="'+(step+1)+'"></progress><ol class="wizardSteps">'+names.map((n,i)=>'<li '+(i===step?'aria-current="step"':'')+'>'+esc(n)+'</li>').join('')+'</ol><form id="contractForm"><div class="fields">'+html+'</div><p id="contractError" role="alert"></p><div class="row between"><button type="button" id="previous" '+(step===0?'disabled':'')+'>Précédent</button><button class="primary" type="submit">'+(step===5?'Confirmer et enregistrer':'Suivant →')+'</button></div></form>';
   if(!$('#modal').open) open(content); else $('#modal').innerHTML='<button class="close" onclick="document.querySelector(\'#modal\').close()" aria-label="Fermer">✕</button>'+content;
   $('#previous').onclick=()=>{capture();step--;show();};
-  if(step===0) $('#contractType').onchange=()=>{capture();};
+  if(step===0) $('#contractType').onchange=()=>{capture();if(!original) fillTestObligations(d);};
   if(step===5 && original) loadContractDocuments(c.id);
   $('#contractForm').onsubmit=async e=>{
    e.preventDefault();if(busy)return;capture();if(!valid())return;

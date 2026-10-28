@@ -54,7 +54,9 @@ public class RegistryService {
     private Data normalize(Data data) {
         LocalDate today=LocalDate.now(clock);
         var contracts=data.contracts().stream().map(c ->
-                c.status().equals("Actif") && c.end()!=null && c.end().isBefore(today) ? c.withStatus("Terminé") : c).toList();
+                c.withStatus(c.status().equals("Résilié") ? "Résilié"
+                        : c.end()!=null && c.end().isBefore(today) ? "Terminé"
+                        : c.start().isAfter(today) ? "Brouillon" : "Actif")).toList();
         return new Data(contracts,data.cases(),data.done(),data.analysis());
     }
 }
