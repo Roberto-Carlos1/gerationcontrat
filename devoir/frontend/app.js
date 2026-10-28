@@ -1,0 +1,559 @@
+const $ = s => document.querySelector(s),
+  esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[c]);
+let today = new Date();
+today.setHours(0, 0, 0, 0);
+const iso = d => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-'),
+  plus = n => {
+    let d = new Date(today);
+    d.setDate(d.getDate() + n);
+    return iso(d);
+  },
+  fmt = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('fr-FR') : '—',
+  money = n => Number(n).toLocaleString('fr-FR') + ' Ar',
+  day = s => Math.round((new Date(s + 'T00:00:00') - today) / 864e5),
+  deadline = c => {
+    let d = new Date(c.end + 'T12:00:00');
+    d.setDate(d.getDate() - Number(c.notice));
+    return iso(d);
+  };
+let db,
+  revision = 0;
+let page = 'dashboard',
+  q = '',
+  filter = 'Tous';
+const stages = ['Signalé', 'En analyse', 'En traitement', 'Clôturé'];
+async function save() {
+  const response = await fetch('/api/state', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      revision,
+      data: db
+    })
+  });
+  const result = await response.json();
+  if (!response.ok) throw Error(result.error || 'Enregistrement impossible');
+  db = result.data;
+  revision = result.revision;
+}
+let saving = false;
+async function commit(action) {
+  if (saving) return toast("Enregistrement en cours…");
+  saving = true;
+  const before = structuredClone(db);
+  try {
+    await action();
+  } catch (error) {
+    db = before;
+    try {
+      await refresh();
+    } catch {}
+    render();
+    toast(error.message);
+  } finally {
+    saving = false;
+  }
+}
+async function refresh() {
+  const response = await fetch('/api/state');
+  if (!response.ok) throw Error('Serveur indisponible');
+  const result = await response.json();
+  db = result.data;
+  revision = result.revision;
+}
+function toast(t) {
+  $('#toast').textContent = t;
+  $('#toast').style.display = 'block';
+  setTimeout(() => $('#toast').style.display = 'none', 3500);
+}
+function go(p) {
+  if (page === 'ai' && p !== 'ai') aiRequest?.abort();
+  page = p;
+  q = '';
+  filter = 'Tous';
+  render();
+}
+function open(content) {
+  $('#modal').innerHTML = '<button class="close" onclick="document.querySelector(\'#modal\').close()" aria-label="Fermer">✕</button>' + content;
+  $('#modal').showModal();
+}
+function title(t, s) {
+  return '<h1>' + t + '</h1><div class="muted">' + s + '</div>';
+}
+function badge(c) {
+  return '<span class="badge ' + (c.status === 'Actif' ? '' : 'blue') + '">' + esc(c.status) + '</span>';
+}
+function alerts() {
+  return db.contracts.filter(c => c.status === 'Actif' && c.end).map(c => ({
+    c,
+    date: c.renew === 'Oui' ? deadline(c) : c.end
+  })).map(x => ({
+    ...x,
+    n: day(x.date)
+  })).filter(x => x.n <= 30).sort((a, b) => a.n - b.n);
+}
+function alertBadge(n) {
+  return '<span class="badge ' + (n <= 10 ? 'red' : 'orange') + '">' + (n < 0 ? Math.abs(n) + ' j dépassés' : n === 0 ? "Aujourd’hui" : 'Dans ' + n + ' j') + '</span>';
+}
+function alertRows(list) {
+  return list.map(({
+    c,
+    date,
+    n
+  }) => '<tr><td><b>' + esc(c.supplier) + '</b><small>' + esc(c.name) + '</small></td><td>' + fmt(date) + '<small>' + (c.renew === 'Oui' ? 'Limite de préavis' : 'Fin du contrat') + '</small></td><td>' + alertBadge(n) + '</td><td><button class="link" onclick="detail(\'' + c.id + '\')">Consulter →</button></td></tr>').join('') || '<tr><td colspan="4" class="empty">Aucune échéance à surveiller.</td></tr>';
+}
+function render() {
+  today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (const c of db.contracts) {
+    if (c.status === 'Actif' && c.end && c.end < iso(today)) c.status = 'Terminé';
+  }
+  const tabs = [['dashboard', '◫', 'Tableau de bord'], ['contracts', '▤', 'Contrats'], ['alerts', '◷', 'Échéances & alertes'], ['cases', '⚑', 'Litiges'], ['ai', '✧', 'Analyse des clauses'], ['settings', '⚙', 'Données & aide']];
+  $('#nav').innerHTML = tabs.map(([id, ic, t]) => '<button class="' + (page === id ? 'active' : '') + '" onclick="go(\'' + id + '\')">' + ic + '　' + t + '</button>').join('');
+  const active = db.contracts.filter(c => c.status === 'Actif'),
+    a = alerts();
+  let html = '';
+  if (page === 'dashboard') {
+    let total = active.filter(c => !c.details || c.details.currency==='MGA').reduce((s, c) => s + c.amount * ({
+      Mensuel: 12,
+      Trimestriel: 4,
+      Annuel: 1
+    }[c.frequency] || 1), 0);
+    html = title('Pilotez vos contrats, sereinement.', 'Votre portefeuille fournisseurs au ' + today.toLocaleDateString('fr-FR') + '.') + '<div class="cards">' + [[active.length, 'Contrats actifs', 'Sur ' + db.contracts.length + ' contrats enregistrés'], [a.length, 'Échéances à surveiller', 'Préavis et fins dans les 30 jours'], [db.cases.filter(x => x.stage < 3).length, 'Litiges ouverts', 'Dossiers en cours de traitement'], [money(total), 'Engagement annuel estimé', 'Montants MGA renseignés, annualisés']].map(([v, t, s]) => '<div class="card"><span class="muted">' + t + '</span><strong style="' + (String(v).length > 12 ? 'font-size:23px' : '') + '">' + v + '</strong><small>' + s + '</small></div>').join('') + '</div><div class="grid"><div><div class="panel"><div class="row between"><h2>Les prochaines décisions</h2><button class="link" onclick="go(\'alerts\')">Tout voir →</button></div><div class="tablewrap"><table><thead><tr><th>Fournisseur</th><th>Date à respecter</th><th>Priorité</th><th></th></tr></thead><tbody>' + alertRows(a.slice(0, 4)) + '</tbody></table></div></div><div class="panel"><h2>Votre parcours de gestion</h2><div class="row"><span class="badge">1 · Enregistrer</span> → <span class="badge">2 · Vérifier les clauses</span> → <span class="badge">3 · Suivre les dates</span> → <span class="badge">4 · Agir</span></div></div></div><div><div class="panel"><h2>Répartition des contrats</h2>' + [...new Set(active.map(c => c.category))].map(cat => {
+      let n = active.filter(c => c.category === cat).length;
+      return '<div class="row between"><span>' + esc(cat) + '</span><b>' + n + '</b></div><div class="bar"><i style="width:' + n / Math.max(1, active.length) * 100 + '%"></i></div>';
+    }).join('') + '</div><div class="notice"><b>Anticiper le renouvellement</b><br>Les alertes se calculent sur la limite de préavis lorsqu’un contrat prévoit une reconduction tacite.</div></div></div>';
+  }
+  if (page === 'contracts') html = title('Registre des contrats', 'Centralisez vos fournisseurs et leurs engagements.') + '<div class="filters"><input id="search" placeholder="Rechercher un fournisseur ou un contrat…" oninput="q=this.value;contractList()"><select onchange="filter=this.value;contractList()"><option>Tous</option><option>Actif</option><option>Terminé</option><option>Résilié</option><option>Brouillon</option></select></div><div class="panel tablewrap"><table><thead><tr><th>Contrat / fournisseur</th><th>Montant</th><th>Fin</th><th>Renouvellement auto.</th><th>Statut</th><th></th></tr></thead><tbody id="contractRows"></tbody></table></div>';
+  if (page === 'alerts') html = title('Échéances & alertes', 'Rappels J−30 et J−10 avant la limite de préavis ou la fin du contrat.') + '<div class="notice warn">Les rappels sont affichés dans l’application. Aucun e-mail ni notification en arrière-plan n’est envoyé.</div><div class="panel tablewrap"><table><thead><tr><th>Contrat</th><th>Date de référence</th><th>Délai</th><th>Suivi</th></tr></thead><tbody>' + a.map(({
+    c,
+    date,
+    n
+  }) => {
+    let key = c.id + ':' + date + ':' + (n <= 10 ? '10' : '30');
+    return '<tr><td><b>' + esc(c.supplier) + '</b><small>' + esc(c.name) + '</small></td><td>' + fmt(date) + '<small>' + (c.renew === 'Oui' ? 'Préavis avant renouvellement' : 'Fin du contrat') + '</small></td><td>' + alertBadge(n) + '<small>' + (n < 0 ? 'Action en retard' : n <= 10 ? 'Rappel J−10' : 'Rappel J−30') + '</small></td><td><button onclick="ack(\'' + key + '\')">' + (db.done.includes(key) ? '✓ Pris en compte' : 'Marquer comme lu') + '</button> <button class="link" onclick="detail(\'' + c.id + '\')">Voir</button></td></tr>';
+  }).join('') + '</tbody></table>' + (a.length ? '' : '<p class="empty">Aucune alerte.</p>') + '</div><div class="panel"><h2>Toutes les prochaines dates</h2><div class="timeline">' + active.filter(c => c.end).slice().sort((a, b) => a.end.localeCompare(b.end)).map(c => '<article><b>' + fmt(c.end) + ' · ' + esc(c.supplier) + '</b><br><small>Fin du contrat' + (c.renew === 'Oui' ? ' · Limite de préavis : ' + fmt(deadline(c)) : ' · Sans renouvellement automatique') + '</small></article>').join('') + '</div></div>';
+  if (page === 'cases') html = title('Gestion des litiges', 'Du signalement à la résolution : chaque étape reste visible.') + '<div class="row" style="margin:22px 0"><button class="primary" onclick="newCase()">+ Signaler un litige</button></div><div class="kanban">' + stages.map((s, i) => '<div class="column"><h3>' + s + ' <span class="badge blue">' + db.cases.filter(x => x.stage === i).length + '</span></h3>' + db.cases.filter(x => x.stage === i).map(x => '<article class="ticket"><small class="muted">' + esc(x.id) + ' · ' + esc(db.contracts.find(c => c.id === x.contract)?.supplier || '') + '</small><h3>' + esc(x.title) + '</h3><p>' + esc(x.description) + '</p><b>' + money(x.amount) + '</b><p class="muted">Responsable : ' + esc(x.owner) + '</p><button onclick="caseDetail(\'' + x.id + '\')">Ouvrir le dossier →</button></article>').join('') + '</div>').join('') + '</div>';
+  if (page === 'ai') html = title('Analyse IA du contrat', 'Repérez les passages à vérifier avant de prendre une décision.') + '<div class="notice"><b>Analyse par intelligence artificielle.</b> Le texte est transmis à OpenAI pour produire une synthèse, des extraits et des points à vérifier. Relisez la fiche avant validation.</div><p id="aiStatus" class="muted" role="status">Vérification de la disponibilité de l’IA…</p><div class="grid"><div class="panel"><h2>Texte du contrat</h2><label for="aiContract">Associer à un contrat</label><select id="aiContract" onchange="loadAiDocuments()">' + db.contracts.map(c => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join('') + '</select><p><label for="pdfFile">Importer un contrat PDF (10 Mo, 100 pages maximum)</label><input type="file" id="pdfFile" accept=".pdf,application/pdf" onchange="uploadPdf(this)"></p><div id="aiDocuments"></div><p><label for="textfile">Importer un fichier texte (.txt)</label><input type="file" id="textfile" accept=".txt,text/plain" onchange="loadText(this)"></p><label for="sourceText">Texte du contrat (extrait du PDF ou collé, 40 000 caractères maximum pour l’IA)</label><textarea id="sourceText" maxlength="40000" style="min-height:260px" placeholder="Collez les clauses du contrat…"></textarea><div class="row" style="margin-top:14px"><button id="analyzeButton" class="primary" onclick="analyze()" disabled>✧ Analyser avec l’IA</button><button onclick="example()">Charger un exemple</button></div></div><div class="panel" id="aiResult"><h2>Fiche d’analyse</h2><div class="empty">Importez du texte ou chargez l’exemple pour démarrer.</div></div></div><div class="panel"><h2>Analyses enregistrées</h2>' + (db.analysis.map((a, i) => '<p>' + esc(a.contract) + ' · ' + esc(a.date) + ' <button class="link" onclick="showAnalysis(' + i + ')">Consulter</button></p>').join('') || '<p class="muted">Aucune analyse enregistrée.</p>') + '</div>';
+  if (page === 'settings') html = title('Données & mode d’emploi', 'Gestion des contrats avec Spring Boot et PostgreSQL.') + '<div class="grid"><div class="panel"><h2>Sauvegarde complète (PDF inclus)</h2><p>Conservez les données et les documents dans une archive ZIP.</p><button class="primary" onclick="exportFullBackup()">Télécharger la sauvegarde complète</button><p><label for="fullBackup">Restaurer une sauvegarde complète (.zip, 50 Mo maximum)</label><input id="fullBackup" type="file" accept=".zip,application/zip" onchange="restoreFullBackup(this)"></p><h2>Sauvegardes JSON et exports</h2><p>Les contrats, litiges et analyses sont conservés dans la base de données du serveur. Exportez une sauvegarde pour transférer vos données.</p><p class="notice warn">La sauvegarde JSON contient les données et les analyses, mais pas les fichiers PDF. Téléchargez les PDF séparément pour les conserver.</p><div class="row"><button class="primary" onclick="download(JSON.stringify(db,null,2),\'pacte-sauvegarde.json\',\'application/json\')">Exporter la sauvegarde</button><button onclick="csv()">Exporter les contrats CSV</button></div><p><label>Restaurer une sauvegarde Pacte (.json)</label><input type="file" accept=".json" onchange="restore(this)"></p><button onclick="reset()">Réinitialiser les données de démonstration</button></div><div class="panel"><h2>OCR et rappels automatiques</h2><div id="serviceStatus">Chargement…</div><h2>Les quatre livrables</h2><p><b>01 · Formulaire</b><br>Ajout, modification et consultation des contrats.</p><p><b>02 · Workflow litige</b><br>Signalement, analyse, traitement et clôture avec historique.</p><p><b>03 · Tableau de bord</b><br>Indicateurs, échéances et rappels calculés.</p><p><b>04 · Fiche d’analyse</b><br>Extraits des clauses, validation humaine et impression.</p></div></div><div class="notice">Données fictives. La validation d’une analyse est enregistrée comme une vérification utilisateur. Application sans connexion utilisateur. Les rappels e-mail nécessitent une configuration SMTP.</div>';
+  $('#view').innerHTML = html;
+  if (page === 'contracts') contractList();
+  if (page === 'ai') { loadAiStatus(); loadAiDocuments(); }
+  if (page === 'settings') loadServiceStatus();
+}
+function contractList() {
+  let cs = db.contracts.filter(c => (filter === 'Tous' || c.status === filter) && (c.name + ' ' + c.supplier + ' ' + c.id).toLowerCase().includes(q.toLowerCase()));
+  $('#contractRows').innerHTML = cs.map(c => '<tr><td><b>' + esc(c.name) + '</b><small>' + esc(c.id) + ' · ' + esc(c.supplier) + '</small></td><td>' + (c.amount==null?'Non renseigné':Number(c.amount).toLocaleString('fr-FR')+' '+(c.details?.currency||'MGA')) + '<small>' + esc(c.frequency) + '</small></td><td>' + fmt(c.end) + '</td><td>' + esc(c.renew) + (c.renew === 'Oui' ? '<small>Préavis ' + c.notice + ' jours</small>' : '') + '</td><td>' + badge(c) + '</td><td><button class="link" onclick="detail(\'' + c.id + '\')">Ouvrir →</button></td></tr>').join('') || '<tr><td colspan="6" class="empty">Aucun contrat trouvé.</td></tr>';
+}
+function input(label, name, value, type = 'text', extra = '') {
+  return '<div><label for="f_' + name + '">' + label + '</label><input id="f_' + name + '" name="' + name + '" type="' + type + '" value="' + esc(value) + '" ' + extra + '></div>';
+}
+function select(label, name, value, options) {
+  return '<div><label for="f_' + name + '">' + label + '</label><select id="f_' + name + '" name="' + name + '">' + options.map(o => '<option ' + (o === value ? 'selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></div>';
+}
+const contractTypes = {distribution:'Contrat de distribution',commercial:'Contrat commercial',partenariat:'Contrat de partenariat',approvisionnement:"Contrat d’approvisionnement",services:'Contrat de prestation de services',autre:'Autre type de contrat'};
+const specificFields = {
+ distribution:{territory:'Territoire',exclusivity:'Exclusivité ou non-exclusivité',products:'Produits distribués',targets:'Objectifs de vente',storage:'Stockage',promotion:'Promotion'},
+ commercial:{transaction:'Nature de la transaction',products:'Produits ou services',quantities:'Quantités',unitPrices:'Prix unitaires et devise',discounts:'Remises',delivery:'Livraison'},
+ partenariat:{objectives:'Objectifs communs',contributions:'Contributions des parties',responsibilities:'Responsabilités',sharing:'Partage des coûts ou revenus (si applicable)',exit:'Conditions de sortie'},
+ approvisionnement:{products:'Produits et références',minimum:'Quantités minimales',frequency:'Fréquence de livraison',delivery:'Délais de livraison',unitPrices:'Prix unitaires et devise',compliance:'Contrôle de conformité'},
+ services:{description:'Description des prestations',deliverables:'Livrables',schedule:'Calendrier',acceptance:'Critères de réception',maintenance:'Maintenance (si applicable)',support:'Assistance (si applicable)'},
+ autre:{customType:'Type libre',obligations:'Obligations',conditions:'Conditions particulières'}
+};
+function newContract(id) {
+ const original=db.contracts.find(c=>c.id===id);
+ const c=structuredClone(original || {id:'CT-'+crypto.randomUUID(),name:'',supplier:'',category:'Autre',owner:'',amount:null,frequency:'Annuel',start:iso(today),end:null,notice:0,renew:'Non',status:'Brouillon',penalty:'',notes:''});
+ const d=c.details || {reference:c.id,type:'',representative:'',department:'',purpose:'',signed:null,currency:'MGA',payment:'',clauses:'',specific:{}};
+ let step=0, busy=false;
+ const names=['Identification','Objet et obligations','Conditions financières','Durée et renouvellement','Clauses et risques','Documents et validation'];
+ const area=(label,key,value,required=false)=>'<div class="full"><label for="w_'+key+'">'+esc(label)+(required?' *':'')+'</label><textarea id="w_'+key+'" name="'+key+'" maxlength="10000" '+(required?'required':'')+'>'+esc(value)+'</textarea></div>';
+ function capture() {
+  for(const [k,v] of new FormData($('#contractForm'))) {
+   if(k.startsWith('specific_')) d.specific[k.slice(9)]=v.trim();
+   else if(k.startsWith('details_')) d[k.slice(8)]=v.trim() || (k==='details_signed'?null:'');
+   else if(k!=='pdf') c[k]=v.trim();
+  }
+ }
+ function valid() {
+  const form=$('#contractForm');
+  for(const el of form.querySelectorAll('input[required],textarea[required]')) el.value=el.value.trim();
+  if(!form.reportValidity()) return false;
+  if(step===3 && c.end && c.end<c.start) {toast('La fin doit suivre la date de début.');return false;}
+  return true;
+ }
+ function show() {
+  let html='';
+  if(step===0) html='<div class="full"><label for="contractType">Type de contrat *</label><select id="contractType" name="details_type" required><option value="">Choisir un type…</option>'+Object.entries(contractTypes).map(([k,v])=>'<option value="'+k+'" '+(d.type===k?'selected':'')+'>'+v+'</option>').join('')+'</select></div>'+input('Référence unique *','details_reference',d.reference,'text','required maxlength="120"')+input('Intitulé *','name',c.name,'text','required maxlength="150"')+input('Fournisseur *','supplier',c.supplier,'text','required maxlength="120"')+input('Représentant','details_representative',d.representative,'text','maxlength="200"')+input('Responsable interne *','owner',c.owner,'text','required maxlength="200"')+input('Service concerné *','details_department',d.department,'text','required maxlength="200"')+input('Catégorie','category',c.category,'text','required maxlength="200"')+select('Statut','status',c.status,['Brouillon','Actif','Terminé','Résilié']);
+  if(step===1) html=area('Objet du contrat','details_purpose',d.purpose,true)+Object.entries(specificFields[d.type]).map(([k,label],i)=>area(label,'specific_'+k,d.specific[k],i===0)).join('');
+  if(step===2) html=input('Montant estimé (facultatif)','amount',c.amount,'number','min="0" max="1000000000000" step="0.01"')+input('Devise ISO (ex. MGA, EUR, USD) *','details_currency',d.currency,'text','required pattern="[A-Z]{3}" maxlength="3"')+select('Périodicité du montant estimé','frequency',c.frequency,['Mensuel','Trimestriel','Annuel'])+area('Modalités de paiement','details_payment',d.payment);
+  if(step===3) html=input('Date de signature','details_signed',d.signed,'date')+input('Date de début *','start',c.start,'date','required')+input('Date de fin (vide si durée indéterminée)','end',c.end,'date')+select('Reconduction','renew',c.renew,['Non','Oui'])+input('Préavis en jours *','notice',c.notice,'number','required min="0" max="730" step="1"')+'<p class="full muted">Sans date de fin, aucun rappel de fin automatique ne sera calculé.</p>';
+  if(step===4) html=area('Clauses particulières','details_clauses',d.clauses)+area('Pénalités et risques à examiner','penalty',c.penalty)+area('Notes','notes',c.notes)+'<p class="full muted">La saisie ne garantit pas la validité juridique du contrat. Prévoyez une relecture adaptée.</p>';
+  if(step===5) html='<div class="full">'+contractSummary({...c,details:d})+'<h3>Documents PDF</h3><p>Les PDF peuvent être ajoutés à la fiche après enregistrement. Les documents existants sont conservés.</p>'+(original?'<div id="contractDocuments" data-contract="'+esc(c.id)+'"></div>':'')+'<p>Vérifiez le récapitulatif avant de confirmer.</p></div>';
+  const content='<h2>'+(id?'Modifier le contrat':'Nouveau contrat fournisseur')+'</h2><p id="wizardStep" tabindex="-1">Étape '+(step+1)+' sur 6 · '+names[step]+'</p><progress aria-label="Progression du formulaire" max="6" value="'+(step+1)+'"></progress><ol class="wizardSteps">'+names.map((n,i)=>'<li '+(i===step?'aria-current="step"':'')+'>'+esc(n)+'</li>').join('')+'</ol><form id="contractForm"><div class="fields">'+html+'</div><p id="contractError" role="alert"></p><div class="row between"><button type="button" id="previous" '+(step===0?'disabled':'')+'>Précédent</button><button class="primary" type="submit">'+(step===5?'Confirmer et enregistrer':'Suivant →')+'</button></div></form>';
+  if(!$('#modal').open) open(content); else $('#modal').innerHTML='<button class="close" onclick="document.querySelector(\'#modal\').close()" aria-label="Fermer">✕</button>'+content;
+  $('#previous').onclick=()=>{capture();step--;show();};
+  if(step===0) $('#contractType').onchange=()=>{capture();};
+  if(step===5 && original) loadContractDocuments(c.id);
+  $('#contractForm').onsubmit=async e=>{
+   e.preventDefault();if(busy)return;capture();if(!valid())return;
+   if(step<5){step++;show();$('#wizardStep').focus();return;}
+   c.amount=c.amount===''||c.amount==null?null:Number(c.amount);c.end=c.end||null;c.notice=Number(c.notice);
+   c.details={...d,specific:Object.fromEntries(Object.keys(specificFields[d.type]).filter(k=>d.specific[k]?.trim()).map(k=>[k,d.specific[k]]))};
+   busy=true;const before=structuredClone(db);$('#contractForm button.primary').disabled=true;
+   try {
+    if(db.contracts.some(x=>x.id!==c.id && x.details?.reference.trim().toLowerCase()===d.reference.toLowerCase())) throw Error('Référence déjà utilisée.');
+    if(original) db.contracts[db.contracts.findIndex(x=>x.id===id)]=c;else db.contracts.push(c);
+    await save();$('#modal').close();render();detail(c.id);toast('Contrat enregistré avec succès.');
+   } catch(error){db=before;try{await refresh();}catch{}$('#contractError').textContent=error.message;}
+   finally{busy=false;if($('#contractForm button.primary'))$('#contractForm button.primary').disabled=false;}
+  };
+ }
+ show();
+}
+function contractSummary(c) {
+ const d=c.details;
+ const rows=[['Montant estimé',c.amount==null||c.amount===''?'Non renseigné':Number(c.amount).toLocaleString('fr-FR')+' '+(d?.currency||'MGA')],['Début',fmt(c.start)],['Fin',c.end?fmt(c.end):'Durée indéterminée'],['Responsable',c.owner],['Reconduction',c.renew],['Préavis',c.notice+' jours']];
+ if(d) rows.unshift(['Référence',d.reference],['Intitulé',c.name],['Fournisseur',c.supplier],['Statut',c.status],['Type',contractTypes[d.type]],['Représentant',d.representative],['Service',d.department],['Objet',d.purpose],['Signature',fmt(d.signed)],['Paiement',d.payment],['Clauses particulières',d.clauses],...Object.entries(specificFields[d.type]||{}).map(([k,label])=>[label,d.specific[k]]));
+ return '<dl class="contractSummary">'+rows.map(([label,value])=>'<div><dt>'+esc(label)+'</dt><dd>'+esc(value||'Non renseigné')+'</dd></div>').join('')+'</dl>';
+}
+function detail(id) {
+  let c = db.contracts.find(x => x.id === id);
+  open('<span class="eyebrow">' + esc(c.id) + '</span><h2>' + esc(c.name) + '</h2><p>' + esc(c.supplier) + ' · ' + badge(c) + '</p>' + contractSummary(c) + (c.renew === 'Oui' && c.end ? '<div class="notice warn">Date limite de préavis : <b>' + fmt(deadline(c)) + '</b><br>Rappels affichés 30 et 10 jours avant cette limite.</div>' : '') + '<h3>Pénalités</h3><p>' + esc(c.penalty || 'Non renseignées') + '</p><h3>Notes</h3><p>' + esc(c.notes || 'Aucune') + '</p><h3>Documents PDF</h3><label for="contractPdf">Ajouter le contrat PDF (10 Mo maximum)</label><input id="contractPdf" type="file" accept=".pdf,application/pdf" onchange="uploadPdf(this,\'' + id + '\')"><div id="contractDocuments" data-contract="' + esc(id) + '"></div><div class="row"><button class="primary" onclick="document.querySelector(\'#modal\').close();newContract(\'' + id + '\')">Modifier</button><button onclick="window.print()">Imprimer la fiche</button></div>');
+  loadContractDocuments(id);
+}
+function ack(k) {
+  return commit(async () => {
+    if (!db.done.includes(k)) db.done.push(k);
+    await save();
+    render();
+  });
+}
+function newCase() {
+  open('<h2>Signaler un litige</h2><form id="caseForm"><label>Contrat concerné</label><select name="contract">' + db.contracts.map(c => '<option value="' + c.id + '">' + esc(c.supplier + ' — ' + c.name) + '</option>').join('') + '</select><p><label>Objet *</label><input name="title" required></p><p><label>Description *</label><textarea name="description" required></textarea></p><div class="fields">' + input('Montant en jeu (Ar)', 'amount', 0, 'number', 'min="0" required') + input('Responsable *', 'owner', '', 'text', 'required') + '</div><p><button class="primary">Enregistrer le signalement</button></p></form>');
+  $('#caseForm').onsubmit = async e => {
+    e.preventDefault();
+    return commit(async () => {
+      if (!db.contracts.length) return toast('Créez un contrat au préalable.');
+      let x = Object.fromEntries(new FormData(e.target));
+      x.id = 'LT-' + crypto.randomUUID();
+      x.stage = 0;
+      x.amount = Number(x.amount);
+      x.history = [new Date().toLocaleString('fr-FR') + ' · Signalement enregistré'];
+      db.cases.push(x);
+      await save();
+      $('#modal').close();
+      render();
+      toast('Litige créé.');
+    });
+  };
+}
+function caseDetail(id) {
+  let x = db.cases.find(x => x.id === id);
+  open('<h2>' + esc(x.title) + '</h2><span class="badge blue">' + stages[x.stage] + '</span><p>' + esc(x.description) + '</p><p>Responsable : <b>' + esc(x.owner) + '</b> · Montant : ' + money(x.amount) + '</p><h3>Historique du dossier</h3><div class="timeline">' + x.history.map(h => '<article>' + esc(h) + '</article>').join('') + '</div>' + (x.stage < 3 ? '<label>Note de traitement ' + (x.stage === 2 ? 'et résolution *' : '(facultative)') + '</label><textarea id="caseNote" placeholder="Action réalisée, décision ou solution…"></textarea><p><button class="primary" onclick="advance(\'' + id + '\')">' + (x.stage === 2 ? 'Clôturer le dossier' : 'Passer à : ' + stages[x.stage + 1]) + '</button></p>' : '<div class="notice">Dossier clôturé. La résolution figure dans l’historique.</div>'));
+}
+function advance(id) {
+  return commit(async () => {
+    let x = db.cases.find(x => x.id === id),
+      note = $('#caseNote').value.trim();
+    if (x.stage === 2 && !note) return toast('Décrivez la résolution avant de clôturer.');
+    x.stage++;
+    x.history.push(new Date().toLocaleString('fr-FR') + ' · ' + stages[x.stage] + (note ? ' — ' + note : ''));
+    await save();
+    $('#modal').close();
+    render();
+    caseDetail(id);
+  });
+}
+function example() {
+  $('#sourceText').value = 'Le présent contrat est conclu pour une durée de douze mois. Il sera renouvelé par tacite reconduction pour une durée identique. Toute opposition au renouvellement doit être notifiée avec un préavis de 30 jours avant la date de fin. Le fournisseur intervient dans un délai de 48 heures. Tout retard donne lieu à une pénalité forfaitaire de 50 000 Ar. En cas de litige, les parties recherchent une solution amiable.';
+}
+async function loadText(el) {
+  if (el.files[0]) {
+    if (el.files[0].size > 1000000) return toast('Fichier trop volumineux (1 Mo maximum).');
+    $('#sourceText').value = await el.files[0].text();
+  }
+}
+let ocrBusy = false;
+async function runOcr(id) {
+  if (ocrBusy || saving) return toast('Un traitement est déjà en cours.');
+  ocrBusy = true; saving = true; toast('Reconnaissance du texte en cours…');
+  try {
+    const response = await fetch('/api/documents/' + encodeURIComponent(id) + '/ocr', {method:'POST'});
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || 'OCR indisponible.');
+    await refresh();
+    if ($('#modal').open) $('#modal').close();
+    go('ai'); $('#aiContract').value = result.document.contractId; $('#sourceText').value = result.text;
+    await loadAiDocuments(); toast(result.warning || 'Texte reconnu. Relisez-le avant analyse.');
+  } catch(error) {toast(error.message);}
+  finally {ocrBusy = false; saving = false;}
+}
+async function exportFullBackup() {
+  try {
+    const response = await fetch('/api/backups/full');
+    if (!response.ok) {const error=await response.json();throw Error(error.error || 'Export impossible.');}
+    download(await response.blob(), 'pacte-complet.zip', 'application/zip');
+  } catch(error) {toast(error.message);}
+}
+async function restoreFullBackup(input) {
+  const file = input.files[0]; if (!file) return;
+  if (saving) return toast('Un enregistrement est en cours.');
+  if (file.size > 50000000) return toast('Archive trop volumineuse (50 Mo maximum).');
+  if (!confirm('Remplacer tous les contrats, litiges, analyses et PDF par cette sauvegarde complète ?')) {input.value='';return;}
+  saving=true;
+  try {
+    const response=await fetch('/api/backups/full?revision='+revision,{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+    const result=await response.json();
+    if(!response.ok)throw Error(result.error || 'Restauration impossible.');
+    db=result.data;revision=result.revision;render();toast('Sauvegarde complète restaurée, PDF inclus.');
+  } catch(error) {toast(error.message);}
+  finally {saving=false;input.value='';}
+}
+async function loadServiceStatus() {
+  try {
+    const [mail,ocr,preview]=await Promise.all(['/api/reminders/status','/api/ocr/status','/api/reminders/preview'].map(async path=>{
+      const response=await fetch(path);if(!response.ok)throw Error('État des services indisponible.');return response.json();
+    }));
+    if(page!=='settings')return;
+    $('#serviceStatus').innerHTML='<p>OCR : <b>'+(ocr.available?'disponible':'Tesseract non installé ou indisponible')+'</b></p>'+
+      '<p>Rappels par e-mail : <b>'+(mail.enabled?(mail.configured?'activés':'configuration incomplète'):'désactivés')+'</b></p>'+
+      (mail.lastError?'<p class="notice warn">'+esc(mail.lastError)+'</p>':'')+
+      '<h3>Aperçu des prochaines notifications</h3>'+(preview.length?preview.map(r=>'<p><b>'+esc(r.subject)+'</b><br><small>'+esc(r.date)+'</small></p>').join(''):'<p>Aucune échéance dans les 30 jours.</p>')+
+      '<p class="muted">Aucun e-mail n’est envoyé depuis cet aperçu. Le serveur vérifie les rappels chaque heure lorsqu’ils sont activés.</p>'+
+      '<h3>Derniers rappels envoyés</h3>'+(mail.history.length?mail.history.map(r=>'<p>'+esc(r.contract_id)+' · '+esc(r.reference_date)+' · J−'+esc(r.milestone)+'</p>').join(''):'<p class="muted">Aucun envoi enregistré.</p>');
+  }catch(error){if(page==='settings'&&$('#serviceStatus'))$('#serviceStatus').textContent=error.message;}
+}
+
+let uploadingPdf = false;
+
+function documentLinks(documents) {
+  return documents.length ? documents.map(d => '<article class="notice"><b>' + esc(d.filename) + '</b><br><small>' +
+    d.pages + ' page(s) · ' + Math.ceil(d.size / 1024) + ' Ko · ' + d.characters + ' caractères</small><div class="row">' +
+    '<a href="/api/documents/' + encodeURIComponent(d.id) + '">Télécharger le PDF</a>' +
+    (d.characters ? '<button class="link" onclick="usePdfText(\'' + d.id + '\')">Utiliser le texte pour l’IA</button>' : '<button class="link" onclick="runOcr(\'' + d.id + '\')">Reconnaître le texte (OCR)</button>') + '</div></article>').join('') : '<p class="muted">Aucun PDF associé à ce contrat.</p>';
+}
+async function loadAiDocuments() {
+  if (page !== 'ai' || !$('#aiContract')) return;
+  const id = $('#aiContract').value;
+  if (!id) { $('#aiDocuments').textContent = 'Créez un contrat pour y associer un PDF.'; return; }
+  try {
+    const response = await fetch('/api/contracts/' + encodeURIComponent(id) + '/documents');
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || 'Documents indisponibles.');
+    if (page === 'ai' && $('#aiContract').value === id) $('#aiDocuments').innerHTML = documentLinks(result);
+  } catch (error) {
+    if (page === 'ai' && $('#aiDocuments')) $('#aiDocuments').textContent = error.message;
+  }
+}
+async function loadContractDocuments(id) {
+  try {
+    const response = await fetch('/api/contracts/' + encodeURIComponent(id) + '/documents');
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || 'Documents indisponibles.');
+    if ($('#contractDocuments')?.dataset.contract === id) $('#contractDocuments').innerHTML = documentLinks(result);
+  } catch (error) {
+    if ($('#contractDocuments')?.dataset.contract === id) $('#contractDocuments').textContent = error.message;
+  }
+}
+async function uploadPdf(input, contractId) {
+  const file = input.files[0];
+  if (!file) return;
+  if (uploadingPdf || saving) { input.value = ''; return toast('Un enregistrement est déjà en cours.'); }
+  const fromAnalysis = !contractId;
+  const id = contractId || $('#aiContract').value;
+  if (!id) return toast('Créez ou sélectionnez un contrat.');
+  if (!file.name.toLowerCase().endsWith('.pdf')) return toast('Choisissez un fichier PDF.');
+  if (file.size > 10000000) return toast('PDF trop volumineux : 10 Mo maximum.');
+  uploadingPdf = true;
+  saving = true;
+  input.disabled = true;
+  toast('Import et extraction du PDF en cours…');
+  try {
+    const response = await fetch('/api/contracts/' + encodeURIComponent(id) + '/documents?filename=' + encodeURIComponent(file.name), {
+      method: 'POST', headers: {'Content-Type': 'application/pdf'}, body: file
+    });
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || 'Import PDF impossible.');
+    await refresh();
+    if (fromAnalysis && page === 'ai' && $('#aiContract').value === id) $('#sourceText').value = result.text;
+    await loadContractDocuments(id);
+    if (page === 'ai') await loadAiDocuments();
+    toast(result.warning || 'PDF enregistré. Le texte peut maintenant être analysé.');
+  } catch (error) { toast(error.message); }
+  finally { uploadingPdf = false; saving = false; input.disabled = false; input.value = ''; }
+}
+async function usePdfText(id) {
+  try {
+    const response = await fetch('/api/documents/' + encodeURIComponent(id) + '/text');
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || 'Texte du PDF indisponible.');
+    await refresh();
+    if ($('#modal').open) $('#modal').close();
+    go('ai');
+    $('#aiContract').value = result.document.contractId;
+    $('#sourceText').value = result.text;
+    await loadAiDocuments();
+    toast(!result.text ? 'Ce PDF nécessite un OCR avant analyse.' : result.text.length > 40000 ? 'Sélectionnez un passage de 40 000 caractères maximum avant l’analyse.' : 'Texte chargé depuis le PDF.');
+  } catch (error) { toast(error.message); }
+}
+
+let currentAnalysis = null;
+let aiRequest = null;
+let analyzing = false;
+let aiAvailable = false;
+
+async function loadAiStatus() {
+  aiAvailable = false;
+  try {
+    const response = await fetch('/api/ai/status');
+    if (!response.ok) throw Error('Impossible de vérifier la disponibilité de l’IA.');
+    const status = await response.json();
+    aiAvailable = status.configured;
+    if (page !== 'ai') return;
+    $('#aiStatus').textContent = status.configured
+      ? 'IA configurée · ' + status.provider + ' · ' + status.model
+      : 'IA non configurée : ajoutez la clé API dans la configuration du serveur, puis redémarrez l’application.';
+  } catch (error) {
+    if (page === 'ai' && $('#aiStatus')) $('#aiStatus').textContent = error.message;
+  }
+  if (page === 'ai' && $('#analyzeButton')) $('#analyzeButton').disabled = !aiAvailable || analyzing || !db.contracts.length;
+}
+
+async function analyze() {
+  if (analyzing) return;
+  const text = $('#sourceText').value.trim();
+  const contractId = $('#aiContract').value;
+  if (!text) return toast('Ajoutez le texte du contrat.');
+  if (text.length > 40000) return toast('Texte trop long : 40 000 caractères maximum par analyse.');
+  if (!contractId) return toast('Créez ou sélectionnez un contrat.');
+  if (!aiAvailable) return toast('Configurez la clé API sur le serveur pour activer l’IA.');
+  analyzing = true;
+  currentAnalysis = null;
+  aiRequest = new AbortController();
+  const request = aiRequest;
+  const timeout = setTimeout(() => request.abort(), 90000);
+  $('#analyzeButton').disabled = true;
+  $('#aiResult').setAttribute('aria-busy', 'true');
+  $('#aiResult').innerHTML = '<h2>Analyse en cours…</h2><p class="muted">Lecture du contrat, repérage des clauses et examen des points à vérifier.</p>';
+  try {
+    const response = await fetch('/api/ai/analyze', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({contractId, text}),
+      signal: request.signal
+    });
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || 'Analyse IA indisponible.');
+    currentAnalysis = result;
+    if (page === 'ai') analysisView();
+  } catch (error) {
+    if (page === 'ai') {
+      const message = error.name === 'AbortError' ? 'Analyse interrompue ou délai dépassé. Réessayez.' : error.message;
+      $('#aiResult').innerHTML = '<h2>Analyse indisponible</h2><p class="notice warn">' + esc(message) + '</p>';
+      toast(message);
+    }
+  } finally {
+    clearTimeout(timeout);
+    analyzing = false;
+    if (aiRequest === request) aiRequest = null;
+    if (page === 'ai' && $('#analyzeButton')) {
+      $('#analyzeButton').disabled = !aiAvailable || !db.contracts.length;
+      $('#aiResult').removeAttribute('aria-busy');
+    }
+  }
+}
+
+function analysisContent(a) {
+  const riskClass = value => ({'Bas': '', 'Modéré': 'orange', 'Élevé': 'red', 'Indéterminé': 'blue'}[value] || 'blue');
+  let details = '';
+  if (a.ai) {
+    details = '<h3>Synthèse du contrat</h3><p>' + esc(a.ai.summary) + '</p>' +
+      '<p>Niveau de vigilance : <span class="badge ' + riskClass(a.ai.riskLevel) + '">' + esc(a.ai.riskLevel) + '</span></p>' +
+      '<h3>Risques et points à vérifier</h3>' +
+      (a.ai.risks.length ? a.ai.risks.map(r => '<article class="notice warn"><b>' + esc(r.title) + '</b> ' +
+        '<span class="badge ' + riskClass(r.severity) + '">' + esc(r.severity) + '</span><p>' + esc(r.explanation) + '</p>' +
+        (r.excerpt ? '<blockquote>' + esc(r.excerpt) + '</blockquote>' : '<small>Point à vérifier sans extrait associé.</small>') + '</article>').join('') : '<p class="muted">Aucun risque particulier signalé par le modèle ; une vérification reste nécessaire.</p>') +
+      '<h3>Actions recommandées</h3>' + (a.ai.recommendations.length ? '<ul>' + a.ai.recommendations.map(r => '<li>' + esc(r) + '</li>').join('') + '</ul>' : '<p class="muted">Aucune action particulière proposée.</p>');
+  }
+  return '<span class="eyebrow">FICHE D’ANALYSE · ' + (a.ai ? 'IA' : 'REPÉRAGE LOCAL ARCHIVÉ') + '</span><h2>' + esc(a.contract) +
+    '</h2><p class="muted">' + esc(a.date) + (a.ai ? ' · ' + esc(a.ai.provider) + ' · ' + esc(a.ai.model) : '') + '</p>' + details +
+    '<h3>Clauses et extraits du document</h3>' + a.groups.map(g => '<h3>' + esc(g.label) + '</h3>' +
+      (g.excerpts.length ? g.excerpts.map(s => '<blockquote>' + esc(s) + '</blockquote>').join('') : '<p class="muted">Non identifié : vérifier dans le document.</p>')).join('') +
+    '<div class="notice ' + (a.validated ? '' : 'warn') + '">' + (a.validated ? '✓ Vérification humaine enregistrée' : 'À vérifier : l’IA peut commettre des erreurs. Cette fiche doit être relue avant validation.') + '</div>';
+}
+function analysisView() {
+  if ($('#aiResult') && currentAnalysis) $('#aiResult').innerHTML = analysisContent(currentAnalysis) + '<button class="primary" onclick="keepAnalysis()">Valider et enregistrer la fiche</button>';
+}
+function keepAnalysis() {
+  if (!currentAnalysis) return toast('Effectuez d’abord une analyse.');
+  return commit(async () => {
+    const verified = {...structuredClone(currentAnalysis), validated: true};
+    db.analysis.unshift(verified);
+    await save();
+    currentAnalysis = null;
+    render();
+    toast('Fiche vérifiée et enregistrée.');
+  });
+}
+function showAnalysis(i) {
+  open(analysisContent(db.analysis[i]) + '<button onclick="window.print()">Imprimer / enregistrer en PDF</button>');
+}
+function download(content, name, mime) {
+  let a = document.createElement('a'),
+    u = URL.createObjectURL(new Blob([content], {
+      type: mime
+    }));
+  a.href = u;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(u), 1000);
+}
+function csv() {
+  let cols = ['id', 'name', 'supplier', 'category', 'amount', 'frequency', 'start', 'end', 'notice', 'renew', 'owner', 'status', 'penalty', 'notes'];
+  download('\ufeff' + [cols, ...db.contracts.map(c => cols.map(k => c[k]))].map(r => r.map(v => '"' + (/^[=+@\-\t\r]/.test(String(v ?? '')) ? "'" + v : String(v ?? '')).replace(/"/g, '""') + '"').join(';')).join('\r\n'), 'pacte-contrats.csv', 'text/csv;charset=utf-8');
+}
+async function restore(el) {
+  if (!el.files[0]) return;
+  if (el.files[0].size > 2000000) return toast('Sauvegarde trop volumineuse (2 Mo maximum).');
+  try {
+    const data = JSON.parse(await el.files[0].text());
+    if (!confirm('Remplacer les données actuelles ? Les PDF des contrats absents de la sauvegarde seront supprimés.')) return;
+    await commit(async () => {
+      db = data;
+      await save();
+      render();
+      toast('Sauvegarde restaurée.');
+    });
+  } catch {
+    toast('Sauvegarde JSON invalide.');
+  }
+}
+function reset() {
+  if (confirm('Remplacer vos données par les exemples de démonstration ?')) return commit(async () => {
+    const response = await fetch('/api/demo');
+    db = await response.json();
+    await save();
+    render();
+    toast('Données de démonstration rétablies.');
+  });
+}
+$('#modal').addEventListener('click', e => {
+  if (e.target === $('#modal')) {
+    let r = $('#modal').getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('#modal').close();
+  }
+});
+refresh().then(render).catch(error => {
+  $('#view').textContent = error.message;
+});
+setInterval(() => {
+  if (db && !saving && !$('#modal').open && ['dashboard', 'alerts'].includes(page)) refresh().then(render).catch(() => toast('Serveur indisponible.'));
+}, 60000);

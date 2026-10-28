@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-pacte}
+      POSTGRES_USER: ${DATABASE_USER:-pacte}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Copiez .env.example vers .env et renseignez DATABASE_PASSWORD}
+    ports:
+      - "127.0.0.1:${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - pacte_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  app:
+    build: .
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/${DATABASE_NAME:-pacte}
+      DATABASE_USER: ${DATABASE_USER:-pacte}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Renseignez DATABASE_PASSWORD}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_TO: ${MAIL_TO:-}
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-fra+eng}
+      SERVER_ADDRESS: 0.0.0.0
+      PACTE_DEMO_ENABLED: ${PACTE_DEMO_ENABLED:-true}
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "127.0.0.1:8025:8025"
+volumes:
+  pacte_postgres:

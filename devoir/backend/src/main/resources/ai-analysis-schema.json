@@ -1,0 +1,32 @@
+{
+  "type":"object",
+  "additionalProperties":false,
+  "required":["summary","riskLevel","groups","risks","recommendations"],
+  "properties":{
+    "summary":{"type":"string"},
+    "riskLevel":{"type":"string","enum":["Bas","Modéré","Élevé","Indéterminé"]},
+    "groups":{
+      "type":"array","minItems":5,"maxItems":5,
+      "items":{
+        "type":"object","additionalProperties":false,"required":["label","excerpts"],
+        "properties":{
+          "label":{"type":"string","enum":["Renouvellement","Préavis / résiliation","Pénalités","Durée / échéance","Litiges"]},
+          "excerpts":{"type":"array","maxItems":3,"items":{"type":"string"}}
+        }
+      }
+    },
+    "risks":{
+      "type":"array","maxItems":12,
+      "items":{
+        "type":"object","additionalProperties":false,"required":["title","severity","explanation","excerpt"],
+        "properties":{
+          "title":{"type":"string"},
+          "severity":{"type":"string","enum":["Bas","Modéré","Élevé","Indéterminé"]},
+          "explanation":{"type":"string"},
+          "excerpt":{"type":"string"}
+        }
+      }
+    },
+    "recommendations":{"type":"array","maxItems":12,"items":{"type":"string"}}
+  }
+}
