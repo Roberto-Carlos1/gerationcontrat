@@ -15,7 +15,7 @@ public class RegistryValidator {
         "commercial", java.util.List.of("transaction","products","quantities","unitPrices","discounts","delivery"),
         "partenariat", java.util.List.of("objectives","contributions","responsibilities","sharing","exit"),
         "approvisionnement", java.util.List.of("products","minimum","frequency","delivery","unitPrices","compliance"),
-        "services", java.util.List.of("description","deliverables","schedule","acceptance","maintenance","support"),
+        "services", java.util.List.of("description","deliverables","schedule","acceptance","maintenance","support","clientName","clientAddress","clientRepresentative","providerAddress","discussionDate","clientObligations","place"),
         "autre", java.util.List.of("customType","obligations","conditions"));
     private final Validator validator;
     public RegistryValidator(Validator validator) { this.validator = validator; }

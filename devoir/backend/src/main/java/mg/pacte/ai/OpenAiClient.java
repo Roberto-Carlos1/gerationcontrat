@@ -47,36 +47,48 @@ public class OpenAiClient {
     }
 
     public AiModels.Output analyze(String text) {
-        if(!properties.configured()) throw failure(HttpStatus.SERVICE_UNAVAILABLE,"L’IA n’est pas configurée : renseignez OPENAI_API_KEY sur le serveur.");
-        var payload=Map.of(
-                "model",properties.model(),"store",false,"max_output_tokens",5000,
-                "instructions",INSTRUCTIONS,
-                "input",List.of(Map.of("role","user","content",List.of(Map.of("type","input_text","text",text)))),
-                "text",Map.of("format",Map.of("type","json_schema","name","contract_analysis","strict",true,"schema",schema)));
+        if(!properties.configured()) throw failure(HttpStatus.SERVICE_UNAVAILABLE,"L’IA n’est pas configurée : renseignez OPENAI_API_KEY ou activez Ollama sur le serveur.");
+        var payload=properties.local()
+                ? Map.of("model",properties.model(),"stream",false,"format",schema,
+                    "messages",List.of(Map.of("role","system","content",INSTRUCTIONS),Map.of("role","user","content",text)))
+                : Map.of("model",properties.model(),"store",false,"max_output_tokens",5000,
+                    "instructions",INSTRUCTIONS,
+                    "input",List.of(Map.of("role","user","content",List.of(Map.of("type","input_text","text",text)))),
+                    "text",Map.of("format",Map.of("type","json_schema","name","contract_analysis","strict",true,"schema",schema)));
         var request=HttpRequest.newBuilder(properties.endpoint())
                 .timeout(Duration.ofSeconds(properties.timeoutSeconds()))
                 .header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload))).build();
+        var authorized=properties.local()?request:HttpRequest.newBuilder(properties.endpoint())
+                .timeout(Duration.ofSeconds(properties.timeoutSeconds())).header("Content-Type","application/json")
                 .header("Authorization","Bearer "+properties.apiKey())
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload))).build();
         try {
-            var response=http.send(request,HttpResponse.BodyHandlers.ofInputStream());
+            var response=http.send(authorized,HttpResponse.BodyHandlers.ofInputStream());
             try(var body=response.body()) {
                 if(response.statusCode()==401 || response.statusCode()==403) throw failure(HttpStatus.SERVICE_UNAVAILABLE,"Clé API IA invalide ou accès au modèle refusé. Vérifiez la configuration du serveur.");
-                if(response.statusCode()==429) throw failure(HttpStatus.TOO_MANY_REQUESTS,"Quota ou limite du fournisseur IA atteint. Réessayez plus tard ou vérifiez le compte API.");
+                if(response.statusCode()==429) throw failure(HttpStatus.TOO_MANY_REQUESTS,properties.local()?"Ollama est occupé. Réessayez dans un instant.":"Quota ou limite du fournisseur IA atteint. Réessayez plus tard ou vérifiez le compte API.");
                 if(response.statusCode()<200 || response.statusCode()>=300) throw failure(HttpStatus.BAD_GATEWAY,"Le fournisseur IA a refusé la requête. Vérifiez le modèle configuré ou réessayez plus tard.");
                 byte[] bytes=body.readNBytes(1_000_001);
                 if(bytes.length>1_000_000) throw failure(HttpStatus.BAD_GATEWAY,"Réponse IA trop volumineuse.");
                 JsonNode result=mapper.readTree(bytes);
-                if(!"completed".equals(result.path("status").asString())) throw failure(HttpStatus.BAD_GATEWAY,"Analyse IA incomplète. Réessayez avec un texte plus court.");
-                StringBuilder content=new StringBuilder();
-                for(var item:result.path("output")) {
-                    if(!"message".equals(item.path("type").asString())) continue;
-                    for(var part:item.path("content")) {
-                        if("refusal".equals(part.path("type").asString())) throw failure(HttpStatus.UNPROCESSABLE_ENTITY,"Le modèle n’a pas pu analyser ce document. Vérifiez son contenu.");
-                        if("output_text".equals(part.path("type").asString())) content.append(part.path("text").asString());
+                String responseText;
+                if(properties.local()) {
+                    responseText=result.path("message").path("content").asString();
+                    if(responseText.isBlank()) throw failure(HttpStatus.BAD_GATEWAY,"Ollama a renvoyé une réponse vide. Vérifiez le modèle configuré.");
+                } else {
+                    if(!"completed".equals(result.path("status").asString())) throw failure(HttpStatus.BAD_GATEWAY,"Analyse IA incomplète. Réessayez avec un texte plus court.");
+                    StringBuilder content=new StringBuilder();
+                    for(var item:result.path("output")) {
+                        if(!"message".equals(item.path("type").asString())) continue;
+                        for(var part:item.path("content")) {
+                            if("refusal".equals(part.path("type").asString())) throw failure(HttpStatus.UNPROCESSABLE_ENTITY,"Le modèle n’a pas pu analyser ce document. Vérifiez son contenu.");
+                            if("output_text".equals(part.path("type").asString())) content.append(part.path("text").asString());
+                        }
                     }
+                    responseText=content.toString();
                 }
-                var output=mapper.readValue(content.toString(),AiModels.Output.class);
+                var output=mapper.readValue(responseText,AiModels.Output.class);
                 validate(output,text);
                 return output;
             }
@@ -85,7 +97,7 @@ public class OpenAiClient {
         } catch(InterruptedException e) {
             Thread.currentThread().interrupt();throw failure(HttpStatus.SERVICE_UNAVAILABLE,"Analyse interrompue. Réessayez.");
         } catch(IOException e) {
-            throw failure(HttpStatus.BAD_GATEWAY,"Connexion au fournisseur IA impossible. Vérifiez l’accès Internet du serveur.");
+            throw failure(HttpStatus.BAD_GATEWAY,properties.local()?"Ollama est inaccessible. Démarrez Ollama et vérifiez AI_ENDPOINT.":"Connexion au fournisseur IA impossible. Vérifiez l’accès Internet du serveur.");
         } catch(tools.jackson.core.JacksonException e) {
             throw failure(HttpStatus.BAD_GATEWAY,"Réponse IA invalide. Aucune fiche n’a été enregistrée.");
         }

@@ -25,11 +25,11 @@ public class AiService {
     }
 
     public AiModels.Status status() {
-        return new AiModels.Status(properties.configured(),"OpenAI",properties.model(),40000);
+        return new AiModels.Status(properties.configured(),properties.providerName(),properties.model(),40000);
     }
 
     public Analysis analyze(AiModels.Request request) {
-        if(!properties.configured()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"L’IA n’est pas configurée : renseignez OPENAI_API_KEY sur le serveur.");
+        if(!properties.configured()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"L’IA n’est pas configurée : renseignez OPENAI_API_KEY ou activez Ollama sur le serveur.");
         // Le verrou du registre est relâché avant l'appel externe.
         var contract=registry.read().data().contracts().stream().filter(c->c.id().equals(request.contractId())).findFirst()
                 .orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Contrat introuvable. Rechargez la page."));
@@ -37,7 +37,7 @@ public class AiService {
         try {
             acquireQuota();
             var output=client.analyze(request.text());
-            var details=new AiModels.Details("OpenAI",properties.model(),output.summary(),output.riskLevel(),output.risks(),output.recommendations());
+            var details=new AiModels.Details(properties.providerName(),properties.model(),output.summary(),output.riskLevel(),output.risks(),output.recommendations());
             return new Analysis(contract.name(),ZonedDateTime.now(clock).format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")),
                     output.groups(),false,details);
         } finally { slots.release(); }

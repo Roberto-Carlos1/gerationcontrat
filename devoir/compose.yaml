@@ -22,6 +22,9 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Renseignez DATABASE_PASSWORD}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_MODEL: ${AI_MODEL:-${OPENAI_MODEL:-gpt-4.1-mini}}
+      AI_ENDPOINT: ${AI_ENDPOINT:-https://api.openai.com/v1/responses}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}

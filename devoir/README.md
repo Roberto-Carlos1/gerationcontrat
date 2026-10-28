@@ -103,8 +103,8 @@ Dockerfile                   Construction Maven et exécution Java
 | GET | `/api/state` | Lire `{revision, data}` |
 | PUT | `/api/state` | Enregistrer `{revision, data}` dans une transaction |
 | GET | `/api/demo` | Lire les exemples pour la réinitialisation |
-| GET | `/api/ai/status` | Vérifier si une clé IA est configurée (aucun secret renvoyé) |
-| POST | `/api/ai/analyze` | Analyser `{contractId, text}` avec OpenAI |
+| GET | `/api/ai/status` | Vérifier si un fournisseur IA est configuré (aucun secret renvoyé) |
+| POST | `/api/ai/analyze` | Analyser `{contractId, text}` avec le fournisseur configuré |
 | POST | `/api/contracts/{id}/documents?filename=contrat.pdf` | Importer le fichier PDF brut (`application/pdf`) |
 | GET | `/api/contracts/{id}/documents` | Lister les PDF associés au contrat |
 | GET | `/api/documents/{id}` | Télécharger le fichier original |
@@ -164,10 +164,37 @@ et sélectionner cet export ou une autre sauvegarde JSON valide.
 La restauration demande confirmation et remplace le registre dans une transaction.
 Aucun import automatique n’écrase la base PostgreSQL.
 
-## Activer l’analyse IA, sans connexion utilisateur
+## Activer l’analyse IA localement ou avec OpenAI
+
+Pour analyser sans clé API ni envoi du texte à un fournisseur externe, installer
+[Ollama](https://ollama.com/download), puis télécharger un modèle dans un terminal :
+
+```bash
+ollama pull qwen2.5:3b
+```
+
+Dans `.env`, choisir `AI_PROVIDER=ollama`, `AI_MODEL=qwen2.5:3b` et
+`AI_ENDPOINT=http://127.0.0.1:11434/api/chat`. Laisser Ollama démarré, puis
+lancer l’application comme décrit plus haut (`. ./.env` et
+`mvn -f backend/pom.xml spring-boot:run`). Le premier téléchargement du modèle
+nécessite Internet ; les analyses suivantes sont exécutées sur la machine et ne
+nécessitent pas de clé API. Le modèle 3B est compact ; un modèle plus grand peut
+améliorer les résultats, au prix de davantage de mémoire et de temps.
+
+Pour revenir à OpenAI, configurer `.env` ainsi :
+
+```dotenv
+AI_PROVIDER=openai
+OPENAI_API_KEY=votre_cle_api
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+Redémarrer le backend après chaque changement de configuration.
+
+### Configuration OpenAI
 
 L’intégration utilise l’API Responses d’OpenAI avec une sortie JSON structurée.
-Dans `.env`, renseigner une clé API de votre compte, sans l’inscrire dans le frontend :
+Pour le mode OpenAI, renseigner une clé API de votre compte, sans l’inscrire dans le frontend :
 
 ```dotenv
 OPENAI_API_KEY=votre_cle_api
@@ -192,10 +219,11 @@ son texte, puis cliquer sur « Analyser avec l’IA ». Relire la synthèse, les
 recommandations et citations avant de valider et enregistrer la fiche.
 Les anciennes fiches sans métadonnées IA sont identifiées comme repérage local archivé.
 
-Le texte est transmis à OpenAI uniquement lors du clic d’analyse, via le backend.
-La requête utilise `store: false` ; ce paramètre ne constitue pas une garantie d’absence
-de toute conservation technique par le fournisseur. Aucun outil ni recherche externe
-n’est activé et le modèle n’a aucun accès à la base. La réponse ne modifie pas les contrats.
+En mode OpenAI, le texte est transmis à OpenAI uniquement lors du clic d’analyse, via
+le backend. En mode Ollama, le texte est envoyé au service local sur `127.0.0.1:11434`.
+La requête OpenAI utilise `store: false` ; ce paramètre ne constitue pas une garantie
+d’absence de toute conservation technique par le fournisseur. Aucun outil ni recherche
+externe n’est activé et le modèle n’a aucun accès à la base. La réponse ne modifie pas les contrats.
 La clé reste exclusivement dans les variables serveur. Les citations sont vérifiées
 par comparaison avec le texte fourni ; cette vérification ne garantit pas que les
 interprétations du modèle sont correctes. Une relecture reste nécessaire.
@@ -204,14 +232,22 @@ six demandes par minute et délai fournisseur de 60 secondes, sans nouvelle tent
 
 Documentation officielle : [Responses et sorties structurées](https://developers.openai.com/api/docs/guides/structured-outputs).
 
-## Importer et conserver les PDF
+## Générer et importer les PDF
+
+Depuis la fiche d’un contrat, **Générer le projet de contrat PDF** ouvre un canevas
+juridique paginé avec articles, clauses selon le type de contrat, blocs de signature
+et champs manquants à compléter. Le navigateur permet ensuite de l’imprimer ou de
+l’enregistrer en PDF. Le document affiche clairement qu’il s’agit d’un projet à
+faire relire, et non d’une attestation de conformité juridique. La clause de droit
+applicable fait référence à la loi malgache n° 66-003, sous réserve de vérification
+des textes en vigueur et des règles spéciales applicables au secteur.
 
 L’import est disponible dans la fiche d’un contrat et dans l’écran d’analyse IA.
 Un fichier fictif est fourni dans `examples/contrat-demo.pdf` pour tester le parcours.
 Le fichier original et le texte extrait sont enregistrés dans PostgreSQL.
 Les documents sont téléchargeables depuis ces deux écrans ; un document enregistré
 peut être réutilisé pour une nouvelle analyse sans nouvel import.
-L’import et l’extraction fonctionnent même sans clé API et ne transmettent pas le PDF à OpenAI.
+L’import et l’extraction fonctionnent sans clé API et ne transmettent pas le PDF à OpenAI.
 
 Limites : 10 Mo et 100 pages par fichier, PDF non chiffré et au plus 200 000 caractères
 extraits. Un document de plus de 40 000 caractères doit être réduit à un passage
@@ -275,7 +311,7 @@ PACTE_TEST_TESSERACT=/usr/bin/tesseract scripts/test-postgres.sh
 
 Cette version est prévue pour un usage local, sans comptes utilisateurs ni gestion
 des droits. L’écoute et les ports Docker sont limités à la machine locale.
-L’analyse IA appelle OpenAI lorsque la clé serveur est renseignée. Sans clé, l’interface
+L’analyse IA utilise Ollama localement par défaut, ou OpenAI si configuré. Sans fournisseur actif, l’interface
 affiche que le service n’est pas configuré ; aucun résultat de simulation n’est présenté comme une IA.
 Les rappels restent visibles dans l’interface. L’envoi par e-mail fonctionne en arrière-plan lorsque SMTP et les destinataires sont configurés et que le serveur reste démarré.
 
