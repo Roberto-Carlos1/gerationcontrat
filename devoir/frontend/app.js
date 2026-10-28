@@ -168,6 +168,28 @@ const specificFields = {
  services:{description:'Nature de la prestation / objet',deliverables:'Documents contractuels / livrables',schedule:'Calendrier',acceptance:'Critères de réception',maintenance:'Maintenance (si applicable)',support:'Assistance (si applicable)',clientName:'Nom de l’entreprise cliente',clientAddress:'Adresse du siège social du Client',clientRepresentative:'Nom et titre du représentant du Client',providerAddress:'Adresse du Prestataire',discussionDate:'Date de l’entretien préalable',clientObligations:'Obligations du Client',place:'Lieu de signature'},
  autre:{customType:'Type libre',obligations:'Obligations',conditions:'Conditions particulières'}
 };
+function fillExampleObligations(details) {
+ details.specific=details.specific||{};
+ const examples=details.type==='services'?{
+  description:'Maintenance et assistance du matériel informatique.',
+  deliverables:'Rapport d’intervention après chaque prestation.',
+  schedule:'Calendrier à convenir entre les parties.',
+  acceptance:'Validation écrite du Client après vérification de la prestation.',
+  maintenance:'Modalités de maintenance à convenir.',
+  support:'Modalités d’assistance à convenir.',
+  clientName:'[Nom de l’entreprise cliente]',
+  clientAddress:'[Adresse du siège social du Client]',
+  clientRepresentative:'[Nom et titre du représentant du Client]',
+  providerAddress:'[Adresse du Prestataire]',
+  discussionDate:'',
+  clientObligations:'mettre à disposition les informations et accès nécessaires à la prestation',
+  place:'Antananarivo'
+ }:{};
+ for(const [key,label] of Object.entries(specificFields[details.type]||{})) {
+  if(details.specific[key]===undefined||details.specific[key]===null||details.specific[key]==='')
+   details.specific[key]=examples[key]!==undefined?examples[key]:'[EXEMPLE À REMPLACER] '+label;
+ }
+}
 function automaticStatus(c) {
  if(c.status==='Résilié') return 'Résilié';
  const date=iso(new Date());
@@ -182,6 +204,7 @@ function newContract(id) {
  const original=db.contracts.find(c=>c.id===id);
  const c=structuredClone(original || {id:'CT-'+crypto.randomUUID(),name:'Prestation de démonstration',supplier:'Fournisseur Démo',category:'Services',owner:'Carlos',amount:1200000,frequency:'Annuel',start:iso(today),end:null,notice:0,renew:'Non',status:'Brouillon',penalty:'',notes:''});
  const d=c.details || {reference:original?c.id:'REF-'+iso(today).replaceAll('-','')+'-'+crypto.randomUUID().slice(0,8).toUpperCase(),type:'services',representative:'Rakoto Jean',department:'Achats',purpose:'Maintenance et assistance du matériel informatique pour le projet de démonstration.',signed:iso(today),currency:'MGA',payment:'Paiement sous 30 jours après réception de la facture.',clauses:'Confidentialité des informations échangées.',specific:{}};
+ fillExampleObligations(d);
  c.status=automaticStatus(c);
  let step=0, busy=false;
  const names=['Identification','Objet et obligations','Conditions financières','Durée et renouvellement','Clauses et risques','Prévisualisation du contrat'];
@@ -212,7 +235,7 @@ function newContract(id) {
   const content='<h2>'+(id?'Modifier le contrat':'Nouveau contrat fournisseur')+'</h2><p id="wizardStep" tabindex="-1">Étape '+(step+1)+' sur 6 · '+names[step]+'</p><progress aria-label="Progression du formulaire" max="6" value="'+(step+1)+'"></progress><ol class="wizardSteps">'+names.map((n,i)=>'<li '+(i===step?'aria-current="step"':'')+'>'+esc(n)+'</li>').join('')+'</ol><form id="contractForm"><div class="fields">'+html+'</div><p id="contractError" role="alert"></p><div class="row between"><button type="button" id="previous" '+(step===0?'disabled':'')+'>Précédent</button><button class="primary" type="submit">'+(step===5?'Enregistrer le contrat':step===4?'Prévisualiser le contrat →':'Suivant →')+'</button></div></form>';
   if(!$('#modal').open) open(content); else $('#modal').innerHTML='<button class="close" onclick="document.querySelector(\'#modal\').close()" aria-label="Fermer">✕</button>'+content;
   $('#previous').onclick=()=>{capture();step--;show();};
-  if(step===0) $('#contractType').onchange=()=>capture();
+  if(step===0) $('#contractType').onchange=()=>{capture();fillExampleObligations(d);};
   if(step===5 && original) loadContractDocuments(c.id);
   $('#contractForm').onsubmit=async e=>{
    e.preventDefault();if(busy)return;capture();if(!valid())return;
@@ -258,19 +281,15 @@ function previewContract(id) {
 }
 function detail(id) {
   let c = db.contracts.find(x => x.id === id);
-<<<<<<< HEAD
-  open('<span class="eyebrow">' + esc(c.id) + '</span><h2>' + esc(c.name) + '</h2><p>' + esc(c.supplier) + ' · ' + badge(c) + '</p>' + contractSummary(c) + (c.renew === 'Oui' && c.end ? '<div class="notice warn">Date limite de préavis : <b>' + fmt(deadline(c)) + '</b><br>Rappels affichés 30 et 10 jours avant cette limite.</div>' : '') + '<h3>Pénalités</h3><p>' + esc(c.penalty || 'Non renseignées') + '</p><h3>Notes</h3><p>' + esc(c.notes || 'Aucune') + '</p><h3>Documents PDF</h3><label for="contractPdf">Ajouter le contrat PDF (10 Mo maximum)</label><input id="contractPdf" type="file" accept=".pdf,application/pdf" onchange="uploadPdf(this,\'' + id + '\')"><div id="contractDocuments" data-contract="' + esc(id) + '"></div><div class="row"><button class="primary" onclick="document.querySelector(\'#modal\').close();newContract(\'' + id + '\')">Modifier</button><button onclick="previewContract(\'' + id + '\')">Prévisualiser le contrat</button><button onclick="window.print()">Imprimer la fiche</button></div>');
-=======
-  open('<span class="eyebrow">' + esc(c.id) + '</span><h2>' + esc(c.name) + '</h2><p>' + esc(c.supplier) + ' · ' + badge(c) + '</p>' + contractSummary(c) + (c.renew === 'Oui' && c.end ? '<div class="notice warn">Date limite de préavis : <b>' + fmt(deadline(c)) + '</b><br>Rappels affichés 30 et 10 jours avant cette limite.</div>' : '') + '<h3>Pénalités</h3><p>' + esc(c.penalty || 'Non renseignées') + '</p><h3>Notes</h3><p>' + esc(c.notes || 'Aucune') + '</p><h3>Documents PDF</h3><label for="contractPdf">Ajouter le contrat PDF (10 Mo maximum)</label><input id="contractPdf" type="file" accept=".pdf,application/pdf" onchange="uploadPdf(this,\'' + id + '\')"><div id="contractDocuments" data-contract="' + esc(id) + '"></div><div class="row"><button class="primary" onclick="document.querySelector(\'#modal\').close();newContract(\'' + id + '\')">Modifier</button><button onclick="window.print()">Imprimer la fiche</button></div>');
-  $('#modal .row').prepend('<button onclick="generateContractPdf(\'' + id + '\')">Générer le projet de contrat PDF</button>');
->>>>>>> b3b9c5b (contrat de prestation de service)
+  open('<span class="eyebrow">' + esc(c.id) + '</span><h2>' + esc(c.name) + '</h2><p>' + esc(c.supplier) + ' · ' + badge(c) + '</p>' + contractSummary(c) + (c.renew === 'Oui' && c.end ? '<div class="notice warn">Date limite de préavis : <b>' + fmt(deadline(c)) + '</b><br>Rappels affichés 30 et 10 jours avant cette limite.</div>' : '') + '<h3>Pénalités</h3><p>' + esc(c.penalty || 'Non renseignées') + '</p><h3>Notes</h3><p>' + esc(c.notes || 'Aucune') + '</p><h3>Documents PDF</h3><label for="contractPdf">Ajouter le contrat PDF (10 Mo maximum)</label><input id="contractPdf" type="file" accept=".pdf,application/pdf" onchange="uploadPdf(this,\'' + id + '\')"><div id="contractDocuments" data-contract="' + esc(c.id) + '"></div><div class="row"><button class="primary" onclick="document.querySelector(\'#modal\').close();newContract(\'' + id + '\')">Modifier</button><button onclick="previewContract(\'' + id + '\')">Prévisualiser le contrat</button><button onclick="window.print()">Imprimer la fiche</button></div>');
+  $('#modal .row').prepend('<button onclick="generateContractPdf(\'' + id + '\')">Générer le projet selon le modèle choisi</button>');
   loadContractDocuments(id);
 }
 function generateContractPdf(id) {
  const c=db.contracts.find(x=>x.id===id);if(!c)return;
  const d=c.details||{},labels=specificFields[d.type]||{},type=contractTypes[d.type]||'Contrat fournisseur';
  if(d.type==='services'){generateServiceContractPdf(c);return;}
- const value=v=>{const s=String(v??'').trim();return !s||s.toLowerCase().includes('conditions de démonstration à vérifier')?'[À compléter]':s;};
+ const value=v=>{const s=String(v??'').trim();return !s||s.toLowerCase().includes('conditions de démonstration à vérifier')||s.toLowerCase().startsWith('[exemple à remplacer]')?'[À compléter]':s;};
  const line=(label,text)=>`<p><b>${esc(label)} :</b> ${esc(text)}</p>`;
  const article=(title,body)=>`<section><h2>${title}</h2>${body}</section>`;
  const specifics=Object.entries(labels).map(([k,label])=>line(label,value(d.specific?.[k]))).join('')||'<p>[À compléter selon le type de contrat.]</p>';
@@ -297,7 +316,7 @@ function generateContractPdf(id) {
 }
 function generateServiceContractPdf(c) {
  const d=c.details||{},s=d.specific||{};
- const value=v=>{const text=String(v??'').trim();return !text||text.toLowerCase().includes('conditions de démonstration à vérifier')?'[À compléter]':text;};
+ const value=v=>{const text=String(v??'').trim();return !text||text.toLowerCase().includes('conditions de démonstration à vérifier')||text.toLowerCase().startsWith('[exemple à remplacer]')?'[À compléter]':text;};
  const para=text=>`<p>${text}</p>`;
  const field=(key,fallback='[À compléter]')=>esc(value(s[key]||fallback));
  const signatureDate=d.signed?fmt(d.signed):'[date à compléter]';

@@ -98,17 +98,17 @@ Dockerfile                   Construction Maven et exécution Java
 
 ## API
 
-| Méthode | Route | Fonction |
-| --- | --- | --- |
-| GET | `/api/state` | Lire `{revision, data}` |
-| PUT | `/api/state` | Enregistrer `{revision, data}` dans une transaction |
-| GET | `/api/demo` | Lire les exemples pour la réinitialisation |
-| GET | `/api/ai/status` | Vérifier si un fournisseur IA est configuré (aucun secret renvoyé) |
-| POST | `/api/ai/analyze` | Analyser `{contractId, text}` avec le fournisseur configuré |
-| POST | `/api/contracts/{id}/documents?filename=contrat.pdf` | Importer le fichier PDF brut (`application/pdf`) |
-| GET | `/api/contracts/{id}/documents` | Lister les PDF associés au contrat |
-| GET | `/api/documents/{id}` | Télécharger le fichier original |
-| GET | `/api/documents/{id}/text` | Lire le texte extrait du PDF |
+| Méthode | Route                                                  | Fonction                                                              |
+| -------- | ------------------------------------------------------ | --------------------------------------------------------------------- |
+| GET      | `/api/state`                                         | Lire `{revision, data}`                                             |
+| PUT      | `/api/state`                                         | Enregistrer `{revision, data}` dans une transaction                 |
+| GET      | `/api/demo`                                          | Lire les exemples pour la réinitialisation                           |
+| GET      | `/api/ai/status`                                     | Vérifier si un fournisseur IA est configuré (aucun secret renvoyé) |
+| POST     | `/api/ai/analyze`                                    | Analyser `{contractId, text}` avec le fournisseur configuré        |
+| POST     | `/api/contracts/{id}/documents?filename=contrat.pdf` | Importer le fichier PDF brut (`application/pdf`)                    |
+| GET      | `/api/contracts/{id}/documents`                      | Lister les PDF associés au contrat                                   |
+| GET      | `/api/documents/{id}`                                | Télécharger le fichier original                                     |
+| GET      | `/api/documents/{id}/text`                           | Lire le texte extrait du PDF                                          |
 
 Les formats JSON restent compatibles avec le frontend et les sauvegardes précédentes.
 Le frontend continue à envoyer un instantané complet du petit registre. Le backend
@@ -120,18 +120,18 @@ Les lectures utilisent le même verrou pour restituer un instantané cohérent.
 
 ## Base de données
 
-| Table | Contenu |
-| --- | --- |
-| `registry_metadata` | Révision et état d’initialisation |
-| `contracts` | Champs typés des contrats, montants décimaux, dates et statuts |
-| `disputes` | Litiges reliés aux contrats par clé étrangère |
-| `dispute_history` | Historique ordonné de chaque litige |
-| `analyses` | Nom du contrat analysé, date affichée, validation et détails IA en JSONB |
-| `analysis_groups` | Catégories de clauses d’une analyse |
-| `analysis_excerpts` | Extraits ordonnés des clauses |
-| `acknowledgements` | Accusés de lecture reliés aux contrats |
-| `documents` | PDF original en BYTEA, texte extrait, taille, pages et contrat associé |
-| `reminder_deliveries` | Réservations et journal des rappels SMTP, pour limiter les doublons |
+| Table                   | Contenu                                                                     |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `registry_metadata`   | Révision et état d’initialisation                                        |
+| `contracts`           | Champs typés des contrats, montants décimaux, dates et statuts            |
+| `disputes`            | Litiges reliés aux contrats par clé étrangère                           |
+| `dispute_history`     | Historique ordonné de chaque litige                                        |
+| `analyses`            | Nom du contrat analysé, date affichée, validation et détails IA en JSONB |
+| `analysis_groups`     | Catégories de clauses d’une analyse                                       |
+| `analysis_excerpts`   | Extraits ordonnés des clauses                                              |
+| `acknowledgements`    | Accusés de lecture reliés aux contrats                                    |
+| `documents`           | PDF original en BYTEA, texte extrait, taille, pages et contrat associé     |
+| `reminder_deliveries` | Réservations et journal des rappels SMTP, pour limiter les doublons        |
 
 Les analyses conservent le nom du contrat au moment de l’analyse, comme les sauvegardes
 précédentes. Les dates des contrats sont des `DATE`, les montants des `NUMERIC(15,2)`.
