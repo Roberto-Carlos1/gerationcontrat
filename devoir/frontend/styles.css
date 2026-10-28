@@ -14,3 +14,9 @@ progress {width:100%;height:10px;accent-color:var(--primary,#286454)}
 .contractSummary dt {font-size:12px;color:#64748b}.contractSummary dd {margin:5px 0;white-space:pre-wrap}
 #contractError {color:#b42318}button:disabled {opacity:.5;cursor:default}
 @media(max-width:600px){.contractSummary{grid-template-columns:1fr}.wizardSteps li{min-width:75px}}
+
+.contractPaper{background:#fff;color:#202020;border:1px solid #ddd;padding:36px;margin:20px 0;font:15px/1.75 Georgia,'Times New Roman',serif;overflow-wrap:anywhere}
+.contractHeading{text-align:center;border-bottom:2px solid #333;padding-bottom:22px;margin-bottom:26px}.contractHeading>p:first-child{font:11px system-ui,sans-serif;letter-spacing:2px}.contractHeading h2{font:700 23px Georgia,serif;margin:12px 0}.contractHeading small{font:12px system-ui,sans-serif}
+.contractPaper section{margin:24px 0}.contractPaper h3{font:700 16px Georgia,serif;border-bottom:1px solid #ddd;padding-bottom:8px}.contractText{white-space:pre-wrap}.contractSignatures{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:36px}.contractSignatures p{font-size:12px}.contractSignatures>div>div{min-height:90px;border-bottom:1px dotted #999}
+@media(max-width:600px){.contractPaper{padding:18px;font-size:14px}.contractHeading h2{font-size:20px}.contractSignatures{gap:12px}}
+@media print{body:has(.contractPaper) dialog[open]{overflow:visible;max-width:none;padding:0;border-radius:0}body:has(.contractPaper) #wizardStep,body:has(.contractPaper) .wizardSteps,body:has(.contractPaper) progress,body:has(.contractPaper) #modal>h2,body:has(.contractPaper) #contractError{display:none!important}.contractPaper{border:0;padding:0;margin:0;font-size:12pt}.contractPaper section,.contractSignatures{break-inside:avoid}.contractHeading{break-after:avoid}}
