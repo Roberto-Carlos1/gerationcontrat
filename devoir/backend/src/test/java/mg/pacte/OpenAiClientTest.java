@@ -109,7 +109,25 @@ class OpenAiClientTest {
         assertEquals("qwen2.5:7b",received.get().path("model").asString());
         assertFalse(received.get().path("stream").asBoolean());
         assertEquals("object",received.get().path("format").path("type").asString());
+        var allowed=received.get().path("format").path("$defs").path("localExcerpts").path("items").path("enum");
+        assertEquals("Préavis de 30 jours.",allowed.get(0).asString());
+        assertEquals(1,allowed.size());
         assertEquals("Préavis de 30 jours.",received.get().path("messages").get(1).path("content").asString());
+    }
+    @Test void localCategoriesAreRequiredAndConvertedToRegistryGroups() throws Exception {
+        useOllama();
+        var result=mapper.valueToTree(output("Préavis de 30 jours."));
+        var categories=mapper.createObjectNode();
+        for(var group:result.path("groups")) categories.set(group.path("label").asString(),group.path("excerpts"));
+        ((tools.jackson.databind.node.ObjectNode)result).set("groups",categories);
+        providerBody=mapper.writeValueAsString(Map.of("done",true,"done_reason","stop","message",Map.of("content",mapper.writeValueAsString(result))));
+        var analysis=client.analyze("Préavis de 30 jours.");
+        assertEquals(5,analysis.groups().size());
+        assertEquals("Préavis de 30 jours.",analysis.groups().get(1).excerpts().getFirst());
+        assertEquals(5,received.get().path("format").path("properties").path("groups").path("required").size());
+        categories.remove("Litiges");
+        providerBody=mapper.writeValueAsString(Map.of("done",true,"done_reason","stop","message",Map.of("content",mapper.writeValueAsString(result))));
+        assertThrows(ResponseStatusException.class,()->client.analyze("Préavis de 30 jours."));
     }
     @Test void localAnalysisRejectsFabricatedQuotesAndTruncation() throws Exception {
         useOllama();

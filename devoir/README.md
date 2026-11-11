@@ -196,7 +196,11 @@ une configuration supplémentaire. Le premier téléchargement fait plusieurs Go
 Le délai est configurable avec `AI_TIMEOUT_SECONDS=300`. Le modèle n’a pas été
 comparé sur vos contrats : vérifier les citations, les clauses manquantes et la durée.
 L’état « configurée » ne vérifie pas la connexion ; lancer une analyse pour la tester.
-Aucun basculement automatique vers OpenAI ne se produit en mode local.
+Aucun basculement automatique vers OpenAI ne se produit en mode local. Les citations locales sont
+contraintes aux phrases exactes du document (2 000 caractères maximum par phrase).
+Les phrases plus longues ne sont pas proposées comme citations : une absence
+d’extrait ne signifie donc pas l’absence d’une clause. Le contrôle final des citations
+reste actif. Cette contrainte ne garantit pas la justesse de l’interprétation du modèle.
 
 Pour revenir à OpenAI, configurer `.env` ainsi :
 

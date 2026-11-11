@@ -4,6 +4,10 @@ import jakarta.validation.Validator;
 import java.io.IOException;
 import java.net.http.*;
 import java.time.Duration;
+import java.text.BreakIterator;
+import java.util.ArrayList;
+import java.util.Locale;
+import tools.jackson.databind.node.ObjectNode;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,10 +31,12 @@ public class OpenAiClient {
         Classe les clauses dans les cinq groupes du schéma, exactement une fois chacun. Retourne au plus trois
         extraits courts par groupe, copiés mot pour mot et d'un seul tenant du document ; tableau vide si absent.
         Signale au plus six risques ou ambiguïtés concrets à vérifier. Explique chaque point et associe un extrait
-        exact du document. Pour un point lié à une information absente, utilise excerpt vide et indique clairement
+        exact du document. Ne corrige jamais la ponctuation, les accents, les nombres ou les mots d'un extrait.
+        Pour un point lié à une information absente, utilise excerpt vide et indique clairement
         qu'il s'agit d'une absence à vérifier, pas d'une conclusion juridique.
         Donne au plus six recommandations pratiques de vérification ou de clarification.
         Le niveau de risque est une appréciation de lecture, jamais une certification juridique ni une probabilité.
+        Dans cette application, Ar désigne l’ariary malgache (MGA), jamais une langue.
         Si le document ne permet pas de conclure, utilise Indéterminé. Ne valide ni ne modifie aucun contrat.
         """;
 
@@ -48,9 +54,13 @@ public class OpenAiClient {
 
     public AiModels.Output analyze(String text) {
         if(!properties.configured()) throw failure(HttpStatus.SERVICE_UNAVAILABLE,"L’IA n’est pas configurée : renseignez OPENAI_API_KEY ou activez Ollama sur le serveur.");
+        var localFormat=properties.local() ? localSchema(text) : schema;
         var payload=properties.local()
-                ? Map.of("model",properties.model(),"stream",false,"format",schema,
-                    "messages",List.of(Map.of("role","system","content",INSTRUCTIONS+"\nSchéma JSON : "+schema),Map.of("role","user","content",text)),
+                ? Map.of("model",properties.model(),"stream",false,"format",localFormat,
+                    "messages",List.of(Map.of("role","system","content",INSTRUCTIONS+"\nChoisis les citations uniquement parmi les phrases autorisées par le schéma, sans les modifier. "
+                        +"Retourne groups comme un objet : une clé par catégorie et un tableau de citations comme valeur. "
+                        +"Si aucune citation ne convient, laisse le tableau vide ou excerpt vide. "
+                        +"Réponse concise : résumé de trois phrases maximum, trois risques et trois recommandations maximum."),Map.of("role","user","content",text)),
                     "options",Map.of("temperature",0,"num_ctx",32768,"num_predict",5000))
                 : Map.of("model",properties.model(),"store",false,"max_output_tokens",5000,
                     "instructions",INSTRUCTIONS,
@@ -79,6 +89,17 @@ public class OpenAiClient {
                     if(!result.path("done").asBoolean() || "length".equals(result.path("done_reason").asString()))
                         throw failure(HttpStatus.BAD_GATEWAY,"Analyse locale incomplète. Réessayez avec un texte plus court.");
                     responseText=result.path("message").path("content").asString();
+                    var structured=mapper.readTree(responseText);
+                    if(structured instanceof ObjectNode object && structured.path("groups").isObject()) {
+                        var groupObject=structured.path("groups");
+                        var groups=mapper.createArrayNode();
+                        for(String label:List.of("Renouvellement","Préavis / résiliation","Pénalités","Durée / échéance","Litiges")) {
+                            var group=groups.addObject().put("label",label);
+                            group.set("excerpts",groupObject.path(label));
+                        }
+                        object.set("groups",groups);
+                        responseText=mapper.writeValueAsString(object);
+                    }
                     if(responseText.isBlank()) throw failure(HttpStatus.BAD_GATEWAY,"Ollama a renvoyé une réponse vide. Vérifiez le modèle configuré.");
                 } else {
                     if(!"completed".equals(result.path("status").asString())) throw failure(HttpStatus.BAD_GATEWAY,"Analyse IA incomplète. Réessayez avec un texte plus court.");
@@ -105,6 +126,39 @@ public class OpenAiClient {
         } catch(tools.jackson.core.JacksonException e) {
             throw failure(HttpStatus.BAD_GATEWAY,"Réponse IA invalide. Aucune fiche n’a été enregistrée.");
         }
+    }
+
+    // Les citations locales sont choisies dans le document plutôt que réécrites par le modèle.
+    private JsonNode localSchema(String source) {
+        var format=(ObjectNode)schema.deepCopy();
+        var sentences=new ArrayList<String>();
+        var boundaries=BreakIterator.getSentenceInstance(Locale.FRENCH);
+        boundaries.setText(source);
+        int start=boundaries.first();
+        for(int end=boundaries.next();end!=BreakIterator.DONE;start=end,end=boundaries.next()) {
+            String sentence=source.substring(start,end).strip();
+            if(!sentence.isBlank() && sentence.length()<=2000) sentences.add(sentence);
+        }
+        var excerpts=(ObjectNode)format.path("properties").path("groups").path("items").path("properties").path("excerpts");
+        if(sentences.isEmpty()) excerpts.put("maxItems",0);
+        else {
+            var allowed=((ObjectNode)excerpts.path("items")).putArray("enum");
+            sentences.forEach(allowed::add);
+        }
+        // Un objet à cinq clés obligatoires empêche les catégories répétées ou oubliées.
+        var definitions=format.putObject("$defs");
+        definitions.set("localExcerpts",excerpts.deepCopy());
+        var localGroups=mapper.createObjectNode().put("type","object").put("additionalProperties",false);
+        var required=localGroups.putArray("required");
+        var categories=localGroups.putObject("properties");
+        for(String label:List.of("Renouvellement","Préavis / résiliation","Pénalités","Durée / échéance","Litiges")) {
+            required.add(label);
+            categories.putObject(label).put("$ref","#/$defs/localExcerpts");
+        }
+        ((ObjectNode)format.path("properties")).set("groups",localGroups);
+        var riskQuotes=((ObjectNode)format.path("properties").path("risks").path("items").path("properties").path("excerpt")).putArray("enum");
+        riskQuotes.add("");sentences.forEach(riskQuotes::add);
+        return format;
     }
 
     private void validate(AiModels.Output output,String source) {

@@ -1,0 +1,31 @@
+DOCUMENT FICTIF DE TEST — SANS VALEUR CONTRACTUELLE
+CONTRAT DE FOURNITURES — TEST-IA-003
+
+Parties et objet
+La société fictive École Démo commande 100 cartons de papier au fournisseur fictif Papier Démo.
+
+Prix
+Le prix total est de 2000000 Ar.
+Ar désigne l’ariary malgache.
+
+Durée et échéance
+Le contrat commence le 1 mars 2027 et prend fin le 31 août 2027.
+
+Renouvellement
+Article 4 : le contrat est renouvelé automatiquement pour six mois à son échéance.
+Article 9 : le contrat prend fin à son échéance sans renouvellement automatique.
+
+Préavis et résiliation
+Article 5 : le refus du renouvellement doit être notifié au moins 30 jours avant la date de fin.
+Article 10 : le refus du renouvellement doit être notifié au moins 60 jours avant la date de fin.
+
+Livraison
+Article 6 : la totalité de la commande doit être livrée au plus tard le 15 mars 2027.
+Annexe A : la date limite de livraison de la totalité de la commande est fixée au 30 avril 2027.
+
+Pénalités
+Une pénalité de 20000 Ar par jour de retard est appliquée au fournisseur.
+Le montant total des pénalités est plafonné à 200000 Ar.
+
+Litiges
+En cas de litige, les parties recherchent un accord amiable pendant 20 jours après réception de la réclamation écrite.

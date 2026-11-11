@@ -1,0 +1,27 @@
+DOCUMENT FICTIF DE TEST — SANS VALEUR CONTRACTUELLE
+CONTRAT DE FOURNITURE INTERNET — TEST-IA-001
+
+Parties et objet
+La société fictive Bureau Démo achète un accès Internet auprès du fournisseur fictif Réseau Démo.
+Le fournisseur assure une connexion Internet pour les bureaux d’Antananarivo.
+
+Prix
+Le prix est de 300000 Ar par mois.
+Ar désigne l’ariary malgache.
+
+Durée et échéance
+Le contrat commence le 1 janvier 2027 et prend fin le 31 décembre 2027.
+
+Renouvellement
+À son échéance, le contrat est renouvelé automatiquement pour douze mois.
+
+Préavis et résiliation
+Le client peut refuser le renouvellement en adressant une notification écrite au fournisseur au moins 30 jours avant la date de fin.
+
+Pénalités
+Pour chaque journée complète d’interruption imputable au fournisseur, une pénalité de 10000 Ar est déduite de la facture suivante.
+Le total des pénalités ne peut pas dépasser 300000 Ar par mois.
+
+Litiges
+En cas de litige, les parties recherchent une solution amiable pendant 15 jours à compter de la notification écrite du différend.
+À défaut d’accord, elles sollicitent une médiation avant toute autre démarche.
