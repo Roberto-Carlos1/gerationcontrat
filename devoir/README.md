@@ -387,7 +387,9 @@ SMTP_STARTTLS=true
 Ces adresses sont des exemples à remplacer. Plusieurs destinataires peuvent être séparés
 par des virgules. Le mot de passe SMTP reste côté serveur. STARTTLS est requis par défaut.
 Pour un relais local de test uniquement, l’authentification et STARTTLS peuvent être désactivés.
-La configuration actuelle cible SMTP avec STARTTLS, pas le port SSL implicite 465.
+Pour TLS implicite sur le port 465, définir `SMTP_SSL=true`, `SMTP_STARTTLS=false`
+et `SMTP_PORT=465`. Pour STARTTLS sur 587, conserver `SMTP_SSL=false` et
+`SMTP_STARTTLS=true`. Le certificat et le nom du serveur sont vérifiés.
 Après modification, relancer l’application. Dans « Données & aide », vérifier l’état SMTP
 et l’aperçu des notifications, qui ne déclenche aucun envoi.
 
@@ -399,6 +401,50 @@ redémarrage. Après une interruption exactement entre l’envoi et sa confirmat
 base, un doublon reste possible ; SMTP ne garantit pas un envoi exactement une fois.
 Les rappels nécessitent que l’application reste en fonctionnement.
 Documentation : [Spring Mail](https://docs.spring.io/spring-boot/reference/io/email.html).
+
+### Configuration Gmail
+
+Le modèle `.env.smtp.example` utilise `smtp.gmail.com`, le port 587 et STARTTLS.
+Activer la [validation en deux étapes et les mots de passe d’application Google](https://support.google.com/accounts/answer/185833?hl=fr),
+puis créer un mot de passe d’application nommé Pacte depuis
+https://myaccount.google.com/apppasswords.
+Dans `.env.smtp`, mettre son adresse Gmail dans `MAIL_FROM` et `SMTP_USERNAME`,
+le destinataire souhaité dans `MAIL_TO`, et le mot de passe d’application dans
+`SMTP_PASSWORD` (sans les espaces de présentation). Le mot de passe habituel du
+compte n’est pas le secret attendu ici. Ne pas transmettre ces identifiants dans le chat.
+Si les mots de passe d’application ne sont pas proposés, vérifier les restrictions
+du compte ; un compte professionnel peut nécessiter l’administrateur ou OAuth.
+Passer `MAIL_ENABLED=true` une fois toutes les valeurs remplies, puis appliquer
+la commande Docker ci-dessous. L’application doit rester démarrée et avoir Internet.
+
+### Utiliser de vraies adresses avec Docker
+
+Copier `.env.smtp.example` vers `.env.smtp`. Ce dernier fichier est ignoré par Git.
+Remplacer le serveur, l’expéditeur, les destinataires et les identifiants par ceux
+fournis par votre service e-mail. Utiliser le secret SMTP ou mot de passe d’application
+si votre fournisseur l’exige. Certains comptes imposent OAuth et n’acceptent pas
+l’authentification par mot de passe : cette intégration SMTP utilise un identifiant
+et un secret, et ne gère pas OAuth.
+
+Après saisie complète, passer `MAIL_ENABLED=true` dans `.env.smtp`, puis lancer :
+
+```bash
+docker compose --env-file .env --env-file .env.smtp up --build -d app
+```
+
+Le second fichier remplace les paramètres e-mail sans modifier la configuration IA
+ni la base. Utiliser ces deux `--env-file` lors des prochaines créations de conteneurs,
+ou reporter les paramètres dans `.env`. Les variables déjà exportées dans le terminal
+priment sur les fichiers : retirer d’anciennes variables SMTP si nécessaire.
+Pour Maven, charger les paramètres dans l’environnement du processus Java.
+
+Dès l’activation, les rappels éligibles pourront être envoyés aux vraies adresses,
+avec une première vérification une minute après démarrage. Vérifier l’état et les
+erreurs dans **Données & aide**. Un SMTP configuré ne garantit pas la livraison :
+contrôler aussi la boîte du destinataire et les indésirables. Les rappels déjà
+marqués envoyés avec Mailpit ne sont pas automatiquement renvoyés ; pour un nouvel
+essai, utiliser un contrat de test avec une nouvelle échéance et un destinataire
+qui accepte le test. Ne pas supprimer le journal pour forcer un renvoi global.
 
 ## Sauvegarde complète depuis l’interface
 

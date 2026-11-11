@@ -32,6 +32,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_AUTH: ${SMTP_AUTH:-true}
       SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_SSL: ${SMTP_SSL:-false}
       MAIL_ENABLED: ${MAIL_ENABLED:-false}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_TO: ${MAIL_TO:-}

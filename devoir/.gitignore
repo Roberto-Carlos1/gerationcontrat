@@ -3,3 +3,6 @@ data/*.sqlite3-*
 backend/target/
 .env
 data/*.json
+
+# Identifiants du serveur e-mail réel
+.env.smtp
