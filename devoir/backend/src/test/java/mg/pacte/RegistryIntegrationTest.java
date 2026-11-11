@@ -28,6 +28,7 @@ class RegistryIntegrationTest {
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry registry) {
+        registry.add("pacte.ai.provider",()->"openai");
         registry.add("pacte.ai.api-key",()->"");
         registry.add("pacte.ocr.command",()->System.getenv().getOrDefault("PACTE_TEST_TESSERACT","tesseract"));
         registry.add("spring.datasource.url",()->System.getenv("PACTE_TEST_DATABASE_URL"));

@@ -50,7 +50,8 @@ public class OpenAiClient {
         if(!properties.configured()) throw failure(HttpStatus.SERVICE_UNAVAILABLE,"L’IA n’est pas configurée : renseignez OPENAI_API_KEY ou activez Ollama sur le serveur.");
         var payload=properties.local()
                 ? Map.of("model",properties.model(),"stream",false,"format",schema,
-                    "messages",List.of(Map.of("role","system","content",INSTRUCTIONS),Map.of("role","user","content",text)))
+                    "messages",List.of(Map.of("role","system","content",INSTRUCTIONS+"\nSchéma JSON : "+schema),Map.of("role","user","content",text)),
+                    "options",Map.of("temperature",0,"num_ctx",32768,"num_predict",5000))
                 : Map.of("model",properties.model(),"store",false,"max_output_tokens",5000,
                     "instructions",INSTRUCTIONS,
                     "input",List.of(Map.of("role","user","content",List.of(Map.of("type","input_text","text",text)))),
@@ -66,6 +67,7 @@ public class OpenAiClient {
         try {
             var response=http.send(authorized,HttpResponse.BodyHandlers.ofInputStream());
             try(var body=response.body()) {
+                if(properties.local() && response.statusCode()==404) throw failure(HttpStatus.SERVICE_UNAVAILABLE,"Modèle local introuvable. Exécutez ollama pull "+properties.model()+" sur le serveur Ollama.");
                 if(response.statusCode()==401 || response.statusCode()==403) throw failure(HttpStatus.SERVICE_UNAVAILABLE,"Clé API IA invalide ou accès au modèle refusé. Vérifiez la configuration du serveur.");
                 if(response.statusCode()==429) throw failure(HttpStatus.TOO_MANY_REQUESTS,properties.local()?"Ollama est occupé. Réessayez dans un instant.":"Quota ou limite du fournisseur IA atteint. Réessayez plus tard ou vérifiez le compte API.");
                 if(response.statusCode()<200 || response.statusCode()>=300) throw failure(HttpStatus.BAD_GATEWAY,"Le fournisseur IA a refusé la requête. Vérifiez le modèle configuré ou réessayez plus tard.");
@@ -74,6 +76,8 @@ public class OpenAiClient {
                 JsonNode result=mapper.readTree(bytes);
                 String responseText;
                 if(properties.local()) {
+                    if(!result.path("done").asBoolean() || "length".equals(result.path("done_reason").asString()))
+                        throw failure(HttpStatus.BAD_GATEWAY,"Analyse locale incomplète. Réessayez avec un texte plus court.");
                     responseText=result.path("message").path("content").asString();
                     if(responseText.isBlank()) throw failure(HttpStatus.BAD_GATEWAY,"Ollama a renvoyé une réponse vide. Vérifiez le modèle configuré.");
                 } else {

@@ -540,7 +540,7 @@ async function loadAiStatus() {
     aiAvailable = status.configured;
     if (page !== 'ai') return;
     $('#aiStatus').textContent = status.configured
-      ? 'IA configurée · ' + status.provider + ' · ' + status.model
+      ? 'IA configurée · ' + status.provider + ' · ' + status.model + (status.provider.startsWith('Ollama') ? ' · traitement local, sans facturation API (disponibilité vérifiée à l’analyse)' : ' · texte envoyé à OpenAI')
       : 'IA non configurée : activez Ollama en local ou renseignez une clé API sur le serveur, puis redémarrez l’application.';
   } catch (error) {
     if (page === 'ai' && $('#aiStatus')) $('#aiStatus').textContent = error.message;
@@ -555,7 +555,7 @@ async function analyze() {
   if (!text) return toast('Ajoutez le texte du contrat.');
   if (text.length > 40000) return toast('Texte trop long : 40 000 caractères maximum par analyse.');
   if (!contractId) return toast('Créez ou sélectionnez un contrat.');
-  if (!aiAvailable) return toast('Configurez la clé API sur le serveur pour activer l’IA.');
+  if (!aiAvailable) return toast('Configurez le moteur IA sur le serveur pour activer l’IA.');
   analyzing = true;
   currentAnalysis = null;
   aiRequest = new AbortController();

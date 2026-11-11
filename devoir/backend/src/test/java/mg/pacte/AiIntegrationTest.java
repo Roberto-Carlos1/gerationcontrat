@@ -41,6 +41,7 @@ class AiIntegrationTest {
             try(var out=exchange.getResponseBody()){out.write(bytes);}
         });
         provider.start();
+        registry.add("pacte.ai.provider",()->"openai");
         registry.add("pacte.ai.api-key",()->"fake-test-key");
         registry.add("pacte.ai.endpoint",()->"http://127.0.0.1:"+provider.getAddress().getPort()+"/v1/responses");
         registry.add("spring.datasource.url",()->System.getenv("PACTE_TEST_DATABASE_URL"));

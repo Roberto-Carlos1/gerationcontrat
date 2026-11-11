@@ -170,16 +170,33 @@ Pour analyser sans clé API ni envoi du texte à un fournisseur externe, install
 [Ollama](https://ollama.com/download), puis télécharger un modèle dans un terminal :
 
 ```bash
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:7b
 ```
 
-Dans `.env`, choisir `AI_PROVIDER=ollama`, `AI_MODEL=qwen2.5:3b` et
+Dans `.env`, choisir `AI_PROVIDER=ollama`, `AI_MODEL=qwen2.5:7b` et
 `AI_ENDPOINT=http://127.0.0.1:11434/api/chat`. Laisser Ollama démarré, puis
 lancer l’application comme décrit plus haut (`. ./.env` et
 `mvn -f backend/pom.xml spring-boot:run`). Le premier téléchargement du modèle
 nécessite Internet ; les analyses suivantes sont exécutées sur la machine et ne
-nécessitent pas de clé API. Le modèle 3B est compact ; un modèle plus grand peut
+nécessitent pas de clé API. Le modèle est configurable ; un modèle plus grand peut
 améliorer les résultats, au prix de davantage de mémoire et de temps.
+
+Avec Docker, Ollama et le modèle sont installés sur chaque PC :
+
+```bash
+docker compose up -d ollama
+docker compose exec ollama ollama pull qwen2.5:7b
+docker compose up --build -d app
+```
+
+Le backend Docker utilise `http://ollama:11434/api/chat`. Les modèles sont conservés
+dans le volume `pacte_ollama`. Le port Ollama est limité à localhost et les fonctions
+cloud sont désactivées. Cette configuration utilise le CPU ; le GPU NVIDIA nécessite
+une configuration supplémentaire. Le premier téléchargement fait plusieurs Go.
+Le délai est configurable avec `AI_TIMEOUT_SECONDS=300`. Le modèle n’a pas été
+comparé sur vos contrats : vérifier les citations, les clauses manquantes et la durée.
+L’état « configurée » ne vérifie pas la connexion ; lancer une analyse pour la tester.
+Aucun basculement automatique vers OpenAI ne se produit en mode local.
 
 Pour revenir à OpenAI, configurer `.env` ainsi :
 
@@ -187,6 +204,10 @@ Pour revenir à OpenAI, configurer `.env` ainsi :
 AI_PROVIDER=openai
 OPENAI_API_KEY=votre_cle_api
 OPENAI_MODEL=gpt-4.1-mini
+AI_MODEL=gpt-4.1-mini
+AI_ENDPOINT=https://api.openai.com/v1/responses
+# Avec Docker, préciser aussi cette adresse :
+AI_ENDPOINT_DOCKER=https://api.openai.com/v1/responses
 ```
 
 Redémarrer le backend après chaque changement de configuration.
@@ -199,6 +220,10 @@ Pour le mode OpenAI, renseigner une clé API de votre compte, sans l’inscrire 
 ```dotenv
 OPENAI_API_KEY=votre_cle_api
 OPENAI_MODEL=gpt-4.1-mini
+AI_MODEL=gpt-4.1-mini
+AI_ENDPOINT=https://api.openai.com/v1/responses
+# Avec Docker, préciser aussi cette adresse :
+AI_ENDPOINT_DOCKER=https://api.openai.com/v1/responses
 ```
 
 Le modèle est configurable ; choisir un modèle accessible à votre compte et compatible
@@ -390,16 +415,15 @@ API ajoutées : `GET /api/ocr/status`, `POST /api/documents/{id}/ocr`,
 
 ## Vérifier l’IA réelle
 
-Après configuration de `OPENAI_API_KEY` et démarrage de l’application :
+Après configuration du moteur IA et démarrage de l’application :
 
 ```bash
 node scripts/test-ai-live.mjs http://127.0.0.1:8080
 ```
 
-Ce test appelle réellement OpenAI avec un texte fictif et peut être facturé par
-le fournisseur. Il n’enregistre aucune fiche et ne transmet aucune donnée du contrat
+Ce test appelle le moteur sélectionné avec un texte fictif. En mode OpenAI, il peut être facturé. Il n’enregistre aucune fiche et ne transmet aucune donnée du contrat
 existant : son identifiant sert uniquement d’association dans l’application.
-Sans clé configurée, le test s’arrête avant tout appel au fournisseur.
+En mode OpenAI sans clé configurée, le test s’arrête avant tout appel au fournisseur.
 
 ## Formulaire fournisseur en six étapes (V4)
 

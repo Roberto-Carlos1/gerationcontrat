@@ -20,11 +20,12 @@ services:
       DATABASE_URL: jdbc:postgresql://db:5432/${DATABASE_NAME:-pacte}
       DATABASE_USER: ${DATABASE_USER:-pacte}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Renseignez DATABASE_PASSWORD}
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      AI_MODEL: ${AI_MODEL:-qwen2.5:7b}
+      AI_ENDPOINT: ${AI_ENDPOINT_DOCKER:-http://ollama:11434/api/chat}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-300}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
-      AI_PROVIDER: ${AI_PROVIDER:-openai}
-      AI_MODEL: ${AI_MODEL:-${OPENAI_MODEL:-gpt-4.1-mini}}
-      AI_ENDPOINT: ${AI_ENDPOINT:-https://api.openai.com/v1/responses}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -42,9 +43,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "127.0.0.1:11434:11434"
+    environment:
+      OLLAMA_NO_CLOUD: "1"
+    volumes:
+      - pacte_ollama:/root/.ollama
   mailpit:
     image: axllent/mailpit
     ports:
       - "127.0.0.1:8025:8025"
 volumes:
   pacte_postgres:
+  pacte_ollama:

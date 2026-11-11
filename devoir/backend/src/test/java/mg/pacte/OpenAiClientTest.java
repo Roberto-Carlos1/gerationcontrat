@@ -93,6 +93,39 @@ class OpenAiClientTest {
         providerBody="not-json";
         assertEquals(502,assertThrows(ResponseStatusException.class,()->client.analyze("Texte")).getStatusCode().value());
     }
+    private void useOllama() throws Exception {
+        client=new OpenAiClient(new AiProperties("ollama","must-not-be-sent","qwen2.5:7b",
+                URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/v1/responses"),5),mapper,validators.getValidator());
+    }
+    private String localEnvelope(String quote, String reason) {
+        return mapper.writeValueAsString(Map.of("done",true,"done_reason",reason,
+                "message",Map.of("content",mapper.writeValueAsString(output(quote)))));
+    }
+    @Test void localAnalysisUsesSchemaWithoutApiKey() throws Exception {
+        useOllama();
+        providerBody=localEnvelope("Préavis de 30 jours.","stop");
+        assertEquals("Modéré",client.analyze("Préavis de 30 jours.").riskLevel());
+        assertNull(authorization.get());
+        assertEquals("qwen2.5:7b",received.get().path("model").asString());
+        assertFalse(received.get().path("stream").asBoolean());
+        assertEquals("object",received.get().path("format").path("type").asString());
+        assertEquals("Préavis de 30 jours.",received.get().path("messages").get(1).path("content").asString());
+    }
+    @Test void localAnalysisRejectsFabricatedQuotesAndTruncation() throws Exception {
+        useOllama();
+        providerBody=localEnvelope("Préavis de 90 jours.","stop");
+        assertEquals(502,assertThrows(ResponseStatusException.class,()->client.analyze("Préavis de 30 jours.")).getStatusCode().value());
+        providerBody=localEnvelope("Préavis de 30 jours.","length");
+        assertEquals(502,assertThrows(ResponseStatusException.class,()->client.analyze("Préavis de 30 jours.")).getStatusCode().value());
+        providerBody="not-json";
+        assertEquals(502,assertThrows(ResponseStatusException.class,()->client.analyze("Texte")).getStatusCode().value());
+    }
+    @Test void localMissingModelExplainsHowToInstall() throws Exception {
+        useOllama();providerStatus=404;providerBody="internal diagnostics";
+        var error=assertThrows(ResponseStatusException.class,()->client.analyze("Texte"));
+        assertEquals(503,error.getStatusCode().value());
+        assertTrue(error.getReason().contains("ollama pull qwen2.5:7b"));
+    }
     @Test void unconfiguredClientMakesNoRequest() throws Exception {
         var disabled=new OpenAiClient(new AiProperties("","gpt-4.1-mini",URI.create("http://127.0.0.1:1"),5),mapper,validators.getValidator());
         assertEquals(503,assertThrows(ResponseStatusException.class,()->disabled.analyze("Texte")).getStatusCode().value());
